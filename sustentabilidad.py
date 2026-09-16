@@ -125,8 +125,8 @@ st.markdown(
             
             iframe {
                 width: 100% !important;
-                height: 280px !important;
-                max-height: 280px !important;
+                height: 200px !important;
+                max-height: 200px !important;
                 page-break-inside: avoid;
             }
         }
