@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados: Reducción de espacios y proporción fija para el mapa
+# Estilos CSS avanzados: Control de columnas, proporción de mapa y saltos de página para PDF
 st.markdown(
     """
     <style>
@@ -69,6 +69,12 @@ st.markdown(
             color: #0d3b66;
         }
 
+        /* Clase específica para forzar el salto de página antes del punto 2 al imprimir */
+        .salto-pagina {
+            break-before: page;
+            page-break-before: always;
+        }
+
         /* 6. Subtítulos */
         h3 {
             font-size: 14px !important;
@@ -90,11 +96,11 @@ st.markdown(
             margin-left: 15px;
         }
 
-        /* Forzar formato cuadrado y proporcional del mapa en pantalla e impresión */
+        /* Forzar formato cuadrado exacto para el mapa */
         iframe {
             width: 100% !important;
-            height: 320px !important;
-            max-height: 320px !important;
+            height: 280px !important;
+            max-height: 280px !important;
             border-radius: 4px;
         }
         
@@ -119,8 +125,8 @@ st.markdown(
             
             iframe {
                 width: 100% !important;
-                height: 320px !important;
-                max-height: 320px !important;
+                height: 280px !important;
+                max-height: 280px !important;
                 page-break-inside: avoid;
             }
         }
@@ -319,13 +325,14 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS
+      # 1. DATOS (Proporción 1/3 para el mapa y 2/3 para textos)
       # ====================================================
       st.header("1. DATOS")
 
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
 
+        # Usamos la proporción [1, 2] para que el mapa ocupe 1/3 y los datos 2/3
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         with col_mapa:
@@ -367,8 +374,7 @@ try:
                     ),
                 ).add_to(m)
 
-                # Renderizado seguro con altura fija definida
-                st_folium(m, width=320, height=320)
+                st_folium(m, use_container_width=True, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
@@ -376,7 +382,7 @@ try:
                     f" `{cca_val}`."
                 )
             else:
-              st.warning("The `lotes.geojson` file lacks a join column.")
+              st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
@@ -434,8 +440,11 @@ try:
         st.markdown("</div>", unsafe_allow_html=True)
 
       # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES
+      # 2 A 10. TÍTULOS PRINCIPALES (Con salto de página forzado antes del 2)
       # ====================================================
+      st.markdown(
+          '<div class="salto-pagina"></div>', unsafe_allow_html=True
+      )
       st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
