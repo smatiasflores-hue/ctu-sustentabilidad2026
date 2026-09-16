@@ -90,12 +90,11 @@ st.markdown(
             margin-left: 15px;
         }
 
-        /* Forzar formato cuadrado y proporcional del mapa */
+        /* Forzar formato cuadrado y proporcional del mapa en pantalla e impresión */
         iframe {
-            aspect-ratio: 1 / 1 !important;
             width: 100% !important;
-            height: auto !important;
-            max-height: 350px !important;
+            height: 320px !important;
+            max-height: 320px !important;
             border-radius: 4px;
         }
         
@@ -119,8 +118,8 @@ st.markdown(
             }
             
             iframe {
-                aspect-ratio: 1 / 1 !important;
                 width: 100% !important;
+                height: 320px !important;
                 max-height: 320px !important;
                 page-break-inside: avoid;
             }
@@ -320,7 +319,7 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS (Sin separadores gigantes)
+      # 1. DATOS
       # ====================================================
       st.header("1. DATOS")
 
@@ -368,7 +367,8 @@ try:
                     ),
                 ).add_to(m)
 
-                st_folium(m, use_container_width=True, height=None)
+                # Renderizado seguro con altura fija definida
+                st_folium(m, width=320, height=320)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
@@ -376,7 +376,7 @@ try:
                     f" `{cca_val}`."
                 )
             else:
-              st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
+              st.warning("The `lotes.geojson` file lacks a join column.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
