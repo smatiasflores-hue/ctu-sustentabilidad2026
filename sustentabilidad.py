@@ -357,9 +357,10 @@ try:
                     ),
                 ).add_to(m)
 
-                # Contenedor estricto para forzar tamaño cuadrado perfecto
+                # Contenedor con margen superior negativo para subir el mapa
                 st.markdown(
-                    '<div style="width: 320px; height: 320px;">',
+                    '<div style="width: 320px; height: 320px; margin-top:'
+                    ' -20px;">',
                     unsafe_allow_html=True,
                 )
                 st_folium(m, width=320, height=320)
