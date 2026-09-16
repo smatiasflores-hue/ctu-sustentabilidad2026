@@ -13,13 +13,13 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados: Proporción fija para el mapa, títulos en mayúsculas y bold
+# Estilos CSS avanzados: Reducción de espacios y proporción fija para el mapa
 st.markdown(
     """
     <style>
         /* Reducir el espacio superior predeterminado de Streamlit */
         .block-container {
-            padding-top: 1.2rem !important;
+            padding-top: 1.0rem !important;
             padding-bottom: 2rem !important;
         }
 
@@ -31,17 +31,17 @@ st.markdown(
 
         /* 2. Estilo de la Portada / Título Principal */
         h1 {
-            font-size: 30px !important;
+            font-size: 26px !important;
             font-weight: 800 !important;
             text-transform: uppercase !important;
             color: #0d3b66 !important;
             margin-top: -5px !important;
-            margin-bottom: 5px !important;
+            margin-bottom: 2px !important;
         }
 
         /* 3. Valores de las métricas */
         [data-testid="stMetricValue"] {
-            font-size: 22px !important;
+            font-size: 20px !important;
             font-weight: 700 !important;
             color: #1f77b4;
             white-space: normal !important;
@@ -50,7 +50,7 @@ st.markdown(
         
         /* 4. Etiquetas de las métricas */
         [data-testid="stMetricLabel"] {
-            font-size: 13px !important;
+            font-size: 12px !important;
             font-weight: 600 !important;
             color: #555555;
             white-space: normal !important;
@@ -59,51 +59,47 @@ st.markdown(
 
         /* 5. Títulos principales (2 al 10): Mayúsculas y Bold */
         h2 {
-            font-size: 18px !important;
+            font-size: 16px !important;
             font-weight: 700 !important;
             text-transform: uppercase;
-            margin-top: 25px !important;
-            margin-bottom: 8px !important;
+            margin-top: 15px !important;
+            margin-bottom: 6px !important;
             border-bottom: 2px solid #1f77b4;
-            padding-bottom: 3px;
+            padding-bottom: 2px;
             color: #0d3b66;
         }
 
         /* 6. Subtítulos */
         h3 {
-            font-size: 15px !important;
+            font-size: 14px !important;
             font-weight: 700 !important;
             text-transform: uppercase;
-            margin-top: 15px !important;
-            margin-bottom: 5px !important;
+            margin-top: 10px !important;
+            margin-bottom: 4px !important;
             color: #333333;
         }
 
         /* 7. Textos descriptivos */
         p, li, span {
-            font-size: 14px !important;
+            font-size: 13px !important;
             font-weight: 400 !important;
-            line-height: 1.4;
+            line-height: 1.3;
         }
 
         .contenido-sangria {
-            margin-left: 20px;
+            margin-left: 15px;
         }
 
-        /* ========================================================
-           FORZAR FORMATO CUADRADO Y PROPORCIONAL DEL MAPA (EVITA DEFORMACIÓN)
-           ======================================================== */
+        /* Forzar formato cuadrado y proporcional del mapa */
         iframe {
             aspect-ratio: 1 / 1 !important;
             width: 100% !important;
             height: auto !important;
-            max-height: 400px !important;
+            max-height: 350px !important;
             border-radius: 4px;
         }
         
-        /* ========================================================
-           CONFIGURACIÓN ESTRICTA PARA IMPRESIÓN / PDF LIMPIO
-           ======================================================== */
+        /* Configuración estricta para impresión / PDF limpio */
         @media print {
             .stSidebar { display: none !important; }
             header { display: none !important; }
@@ -125,7 +121,7 @@ st.markdown(
             iframe {
                 aspect-ratio: 1 / 1 !important;
                 width: 100% !important;
-                max-height: 350px !important;
+                max-height: 320px !important;
                 page-break-inside: avoid;
             }
         }
@@ -157,16 +153,16 @@ def obtener_calle_cercana(lat, lon):
   return "No disponible"
 
 
-# Encabezado superior izquierdo con CAUBAUNO en mayúsculas y negrita
+# Encabezado superior izquierdo compacto
 st.markdown(
-    "<p style='font-size:13px; font-weight:800; color:#333;"
+    "<p style='font-size:12px; font-weight:800; color:#333;"
     " text-transform:uppercase; letter-spacing:1px; margin-bottom:0px;'>COMISIÓN"
     " DE SUSTENTABILIDAD - <strong>CAUBAUNO</strong></p>",
     unsafe_allow_html=True,
 )
 st.title("CERTIFICADO TÉCNICO URBANÍSTICO - LA PLATA")
 st.markdown(
-    "<p style='font-size:13px; color:#666; margin-top:-5px; margin-bottom:15px;'>"
+    "<p style='font-size:12px; color:#666; margin-top:-2px; margin-bottom:8px;'>"
     "SISTEMA DE CONSULTA Y GESTIÓN DE PARCELAS (MÁS DE 400.000"
     " REGISTROS).</p>",
     unsafe_allow_html=True,
@@ -324,9 +320,8 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS
+      # 1. DATOS (Sin separadores gigantes)
       # ====================================================
-      st.markdown("---")
       st.header("1. DATOS")
 
       with st.container():
@@ -373,7 +368,6 @@ try:
                     ),
                 ).add_to(m)
 
-                # Mapa cuadrado perfecto integrado en la columna
                 st_folium(m, use_container_width=True, height=None)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
@@ -440,7 +434,7 @@ try:
         st.markdown("</div>", unsafe_allow_html=True)
 
       # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES (MAYÚSCULAS)
+      # 2 A 10. TÍTULOS PRINCIPALES
       # ====================================================
       st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
       with st.container():
@@ -549,7 +543,6 @@ try:
         ' "Consultar Parcela" para ver los datos de la parcela.'
     )
 
-  # Mostrar la tabla de resultados completa abajo (se ocultará al imprimir)
   if not df_filtrado.empty:
     st.dataframe(df_filtrado, use_container_width=True)
 
