@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados: Reducción de espacios y proporción fija para el mapa
+# Estilos CSS avanzados: Control de espacios y flujo natural para evitar hojas vacías
 st.markdown(
     """
     <style>
@@ -67,12 +67,7 @@ st.markdown(
             border-bottom: 2px solid #1f77b4;
             padding-bottom: 2px;
             color: #0d3b66;
-        }
-
-        /* Clase para forzar salto de página antes del punto 2 al imprimir */
-        .salto-pagina {
-            break-before: page;
-            page-break-before: always;
+            break-after: avoid; /* Evita que el título quede huérfano separado de su contenido */
         }
 
         /* 6. Subtítulos */
@@ -104,7 +99,7 @@ st.markdown(
             border-radius: 4px;
         }
         
-        /* Configuración estricta para impresión / PDF limpio */
+        /* Configuración estricta para impresión / PDF limpio y fluido */
         @media print {
             .stSidebar { display: none !important; }
             header { display: none !important; }
@@ -121,6 +116,11 @@ st.markdown(
                 overflow: visible !important;
                 text-overflow: unset !important;
                 white-space: normal !important;
+            }
+            
+            /* Evitar saltos de página forzados innecesarios que crean hojas en blanco */
+            div {
+                page-break-inside: avoid;
             }
             
             iframe {
@@ -364,7 +364,7 @@ try:
                     style_function=lambda x: {
                         "fillColor": "#1f77b4",
                         "color": "#0d3b66",
-                        "weight": 1,
+                        "weight": 2,
                         "fillOpacity": 0.6,
                     },
                     tooltip=(
@@ -439,11 +439,8 @@ try:
         st.markdown("</div>", unsafe_allow_html=True)
 
       # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES
+      # 2 A 10. TÍTULOS PRINCIPALES (Flujo natural sin saltos vacíos)
       # ====================================================
-      st.markdown(
-          '<div class="salto-pagina"></div>', unsafe_allow_html=True
-      )
       st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
