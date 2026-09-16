@@ -147,25 +147,23 @@ def obtener_calle_cercana(lat, lon):
   return "No disponible"
 
 
-# Encabezado superior izquierdo con CAUBAUNO en mayúsculas y negrita
+# Encabezado superior izquierdo institucional
 st.markdown(
-    "<p"
-    " style='font-size:13px; font-weight:800; color:#333;"
+    "<p style='font-size:13px; font-weight:800; color:#333;"
     " text-transform:uppercase; letter-spacing:1px; margin-bottom:0px;'>COMISIÓN"
     " DE SUSTENTABILIDAD - <strong>CAUBAUNO</strong></p>",
     unsafe_allow_html=True,
 )
 st.title("CERTIFICADO TÉCNICO URBANÍSTICO - LA PLATA")
 st.markdown(
-    "<p"
-    " style='font-size:13px; color:#666; margin-top:-5px; margin-bottom:15px;'>"
+    "<p style='font-size:13px; color:#666; margin-top:-5px; margin-bottom:15px;'>"
     "SISTEMA DE CONSULTA Y GESTIÓN DE PARCELAS (MÁS DE 400.000"
     " REGISTROS).</p>",
     unsafe_allow_html=True,
 )
 
 
-# Carga optimizada del archivo CSV desde GitHub Releases
+# Carga optimizada y segura del CSV desde GitHub Releases
 @st.cache_data
 def cargar_datos():
   url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
@@ -173,13 +171,13 @@ def cargar_datos():
       url_csv,
       sep=";",
       encoding="latin-1",
-      low_memory=False,
+      low_memory=True,
       on_bad_lines="skip",
   )
   return df
 
 
-# Carga optimizada del archivo GeoJSON de lotes desde GitHub Releases
+# Carga optimizada del GeoJSON desde GitHub Releases
 @st.cache_data
 def cargar_geojson():
   url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
@@ -187,7 +185,8 @@ def cargar_geojson():
 
 
 try:
-  df = cargar_datos()
+  with st.spinner("Cargando bases de datos de la nube..."):
+    df = cargar_datos()
 
   if "busqueda_activa" not in st.session_state:
     st.session_state.busqueda_activa = False
@@ -218,7 +217,7 @@ try:
       st.sidebar.warning("Por favor ingrese un número de partida.")
 
   # ----------------------------------------------------
-  # LÓGICA DE FILTRADO USANDO LA MEMORIA DE SESIÓN
+  # LÓGICA DE FILTRADO
   # ----------------------------------------------------
   df_filtrado = pd.DataFrame()
 
@@ -235,21 +234,17 @@ try:
       st.sidebar.success(
           f"¡Se encontraron {len(df_filtrado)} registro(s) para {pda_completo}!"
       )
-
       st.markdown('<div id="seccion-ficha"></div>', unsafe_allow_html=True)
 
-      # Selector de coincidencias múltiples
       if len(df_filtrado) > 1:
         st.warning(
             f"⚠️ Se encontraron {len(df_filtrado)} registros coincidentes para"
             " esta partida. Seleccione cuál desea visualizar en la ficha:"
         )
-
         opciones = {
             f"Fila {idx} - CCA: {row.get('CCA', 'N/D')} (Zona: {row.get('designacio', 'N/D')})": idx
             for idx, row in df_filtrado.iterrows()
         }
-
         seleccion_str = st.selectbox(
             "Seleccionar registro a consultar:", list(opciones.keys())
         )
@@ -258,9 +253,7 @@ try:
       else:
         row = df_filtrado.iloc[0]
 
-      # Extracción de campos
       cca_val = str(row.get("CCA", ""))
-
       partido_val = cca_val[0:3] if len(cca_val) >= 3 else "055"
       circunscripcion_val = cca_val[3:5] if len(cca_val) >= 5 else "-"
 
@@ -303,7 +296,6 @@ try:
         parcela_val = "-"
 
       df_cca_match = df[df["CCA"].astype(str) == cca_val]
-
       dec_ma_list = (
           df_cca_match["dec_ma"].dropna().astype(str).unique().tolist()
           if "dec_ma" in df.columns
@@ -315,15 +307,14 @@ try:
           else [str(row.get("observacio_2", "N/D"))]
       )
 
-      # ====================================================
+      # ----------------------------------------------------
       # 1. DATOS
-      # ====================================================
+      # ----------------------------------------------------
       st.markdown("---")
       st.header("1. DATOS")
 
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         with col_mapa:
@@ -345,7 +336,6 @@ try:
 
                 centroid = gdf_parcela.unary_union.centroid
                 lat, lon = centroid.y, centroid.x
-
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 m = folium.Map(
@@ -365,10 +355,7 @@ try:
                     ),
                 ).add_to(m)
 
-                # Ancho fijo y altura controlada para evitar deformaciones
-                st_folium(
-                    m, width=380, height=380, use_container_width=False
-                )
+                st_folium(m, width=380, height=380)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
@@ -394,7 +381,6 @@ try:
             st.metric(label="Parcela", value=parcela_val)
 
           st.markdown("")
-
           st.subheader("b. Parámetros Urbanísticos")
           st.metric(
               label="Descripción del Área",
@@ -433,9 +419,9 @@ try:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-      # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES (MAYÚSCULAS)
-      # ====================================================
+      # ----------------------------------------------------
+      # 2 A 10. TÍTULOS PRINCIPALES
+      # ----------------------------------------------------
       st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
@@ -512,9 +498,7 @@ try:
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
         st.success(
-            "**Dictamen Urbanístico y Ambiental:** AGREGAR TEXTO"
-            " SCA"
-            " la zona."
+            "**Dictamen Urbanístico y Ambiental:** AGREGAR TEXTO SCA en la zona."
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -525,9 +509,7 @@ try:
       col_vacio1, col_boton, col_vacio2 = st.columns([2, 2, 2])
       with col_boton:
         if st.button(
-            "🖨️ Imprimir / Guardar Certificado",
-            use_container_width=True,
-            type="primary",
+            "🖨️ Imprimir / Guardar Certificado", width="stretch", type="primary"
         ):
           st.balloons()
           st.info(
@@ -543,9 +525,8 @@ try:
         ' "Consultar Parcela" para ver los datos de la parcela.'
     )
 
-  # Mostrar la tabla de resultados completa abajo (se ocultará al imprimir)
   if not df_filtrado.empty:
-    st.dataframe(df_filtrado, use_container_width=True)
+    st.dataframe(df_filtrado, width="stretch")
 
 except Exception as e:
   st.error(f"Ocurrió un error al leer los datos. Detalle técnico: {e}")
