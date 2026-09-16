@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados: Portada compacta, títulos en mayúsculas, bold y control de mapas
+# Estilos CSS avanzados con reglas de impresión optimizadas
 st.markdown(
     """
     <style>
@@ -91,7 +91,7 @@ st.markdown(
         }
         
         /* ========================================================
-            CONFIGURACIÓN ESTRICTA PARA IMPRESIÓN / PDF LIMPIO
+            CONFIGURACIÓN ESTRICTA Y LIMPIA PARA IMPRESIÓN / PDF
             ======================================================== */
         @media print {
             .stSidebar { display: none !important; }
@@ -105,17 +105,26 @@ st.markdown(
             
             body { background: white; color: black; }
             
-            * {
-                overflow: visible !important;
-                text-overflow: unset !important;
-                white-space: normal !important;
+            /* Evitar superposiciones convirtiendo las columnas en bloques ordenados al imprimir */
+            [data-testid="column"] {
+                width: 100% !important;
+                display: block !important;
+                clear: both !important;
+                page-break-inside: avoid;
             }
             
-            /* Fijar proporciones cuadradas exactas del mapa al imprimir */
+            /* Fijar proporciones cuadradas exactas del mapa y evitar que flote sobre el texto */
             iframe {
                 width: 320px !important;
                 height: 320px !important;
                 max-height: 320px !important;
+                display: block !important;
+                position: relative !important;
+                page-break-inside: avoid;
+                margin-bottom: 15px !important;
+            }
+            
+            div {
                 page-break-inside: avoid;
             }
         }
