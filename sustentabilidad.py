@@ -364,7 +364,7 @@ try:
                     style_function=lambda x: {
                         "fillColor": "#1f77b4",
                         "color": "#0d3b66",
-                        "weight": 1.6,
+                        "weight": 1,
                         "fillOpacity": 0.6,
                     },
                     tooltip=(
