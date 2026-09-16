@@ -111,11 +111,11 @@ st.markdown(
                 white-space: normal !important;
             }
             
-            /* Fijar proporciones exactas del mapa al imprimir para que no se deforme */
+            /* Fijar proporciones cuadradas exactas del mapa al imprimir */
             iframe {
-                width: 100% !important;
-                height: 380px !important;
-                max-height: 380px !important;
+                width: 320px !important;
+                height: 320px !important;
+                max-height: 320px !important;
                 page-break-inside: avoid;
             }
         }
@@ -355,7 +355,14 @@ try:
                     ),
                 ).add_to(m)
 
-                st_folium(m, width=330, height=330)
+                # Contenedor estricto para forzar tamaño cuadrado perfecto
+                st.markdown(
+                    '<div style="width: 320px; height: 320px;">',
+                    unsafe_allow_html=True,
+                )
+                st_folium(m, width=320, height=320)
+                st.markdown("</div>", unsafe_allow_html=True)
+
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
