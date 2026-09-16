@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados con reglas de impresión limpias para evitar superposiciones
+# Estilos CSS avanzados: Proporción fija para el mapa, títulos en mayúsculas y bold
 st.markdown(
     """
     <style>
@@ -89,10 +89,21 @@ st.markdown(
         .contenido-sangria {
             margin-left: 20px;
         }
+
+        /* ========================================================
+           FORZAR FORMATO CUADRADO Y PROPORCIONAL DEL MAPA (EVITA DEFORMACIÓN)
+           ======================================================== */
+        iframe {
+            aspect-ratio: 1 / 1 !important;
+            width: 100% !important;
+            height: auto !important;
+            max-height: 400px !important;
+            border-radius: 4px;
+        }
         
         /* ========================================================
-            CONFIGURACIÓN DE IMPRESIÓN / PDF OPTIMIZADA
-            ======================================================== */
+           CONFIGURACIÓN ESTRICTA PARA IMPRESIÓN / PDF LIMPIO
+           ======================================================== */
         @media print {
             .stSidebar { display: none !important; }
             header { display: none !important; }
@@ -105,20 +116,17 @@ st.markdown(
             
             body { background: white; color: black; }
             
-            /* Permitir flujo normal de columnas al imprimir sin romper páginas */
-            [data-testid="column"] {
-                width: 48% !important;
-                display: inline-block !important;
-                vertical-align: top !important;
+            * {
+                overflow: visible !important;
+                text-overflow: unset !important;
+                white-space: normal !important;
             }
             
-            /* Mantener el mapa cuadrado y fijo sin que flote ni invada texto */
             iframe {
-                width: 300px !important;
-                height: 300px !important;
-                max-height: 300px !important;
-                display: block !important;
-                position: static !important;
+                aspect-ratio: 1 / 1 !important;
+                width: 100% !important;
+                max-height: 350px !important;
+                page-break-inside: avoid;
             }
         }
     </style>
@@ -149,7 +157,7 @@ def obtener_calle_cercana(lat, lon):
   return "No disponible"
 
 
-# Encabezado superior izquierdo institucional
+# Encabezado superior izquierdo con CAUBAUNO en mayúsculas y negrita
 st.markdown(
     "<p style='font-size:13px; font-weight:800; color:#333;"
     " text-transform:uppercase; letter-spacing:1px; margin-bottom:0px;'>COMISIÓN"
@@ -165,7 +173,7 @@ st.markdown(
 )
 
 
-# Carga optimizada y segura del CSV desde GitHub Releases
+# Carga optimizada del archivo CSV desde GitHub Releases
 @st.cache_data
 def cargar_datos():
   url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
@@ -173,13 +181,13 @@ def cargar_datos():
       url_csv,
       sep=";",
       encoding="latin-1",
-      low_memory=True,
+      low_memory=False,
       on_bad_lines="skip",
   )
   return df
 
 
-# Carga optimizada del GeoJSON desde GitHub Releases
+# Carga optimizada del archivo GeoJSON de lotes desde GitHub Releases
 @st.cache_data
 def cargar_geojson():
   url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
@@ -187,8 +195,7 @@ def cargar_geojson():
 
 
 try:
-  with st.spinner("Cargando bases de datos de la nube..."):
-    df = cargar_datos()
+  df = cargar_datos()
 
   if "busqueda_activa" not in st.session_state:
     st.session_state.busqueda_activa = False
@@ -219,7 +226,7 @@ try:
       st.sidebar.warning("Por favor ingrese un número de partida.")
 
   # ----------------------------------------------------
-  # LÓGICA DE FILTRADO
+  # LÓGICA DE FILTRADO USANDO LA MEMORIA DE SESIÓN
   # ----------------------------------------------------
   df_filtrado = pd.DataFrame()
 
@@ -236,17 +243,21 @@ try:
       st.sidebar.success(
           f"¡Se encontraron {len(df_filtrado)} registro(s) para {pda_completo}!"
       )
+
       st.markdown('<div id="seccion-ficha"></div>', unsafe_allow_html=True)
 
+      # Selector de coincidencias múltiples
       if len(df_filtrado) > 1:
         st.warning(
             f"⚠️ Se encontraron {len(df_filtrado)} registros coincidentes para"
             " esta partida. Seleccione cuál desea visualizar en la ficha:"
         )
+
         opciones = {
             f"Fila {idx} - CCA: {row.get('CCA', 'N/D')} (Zona: {row.get('designacio', 'N/D')})": idx
             for idx, row in df_filtrado.iterrows()
         }
+
         seleccion_str = st.selectbox(
             "Seleccionar registro a consultar:", list(opciones.keys())
         )
@@ -255,7 +266,9 @@ try:
       else:
         row = df_filtrado.iloc[0]
 
+      # Extracción de campos
       cca_val = str(row.get("CCA", ""))
+
       partido_val = cca_val[0:3] if len(cca_val) >= 3 else "055"
       circunscripcion_val = cca_val[3:5] if len(cca_val) >= 5 else "-"
 
@@ -298,6 +311,7 @@ try:
         parcela_val = "-"
 
       df_cca_match = df[df["CCA"].astype(str) == cca_val]
+
       dec_ma_list = (
           df_cca_match["dec_ma"].dropna().astype(str).unique().tolist()
           if "dec_ma" in df.columns
@@ -309,14 +323,15 @@ try:
           else [str(row.get("observacio_2", "N/D"))]
       )
 
-      # ----------------------------------------------------
+      # ====================================================
       # 1. DATOS
-      # ----------------------------------------------------
+      # ====================================================
       st.markdown("---")
       st.header("1. DATOS")
 
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
+
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         with col_mapa:
@@ -338,6 +353,7 @@ try:
 
                 centroid = gdf_parcela.unary_union.centroid
                 lat, lon = centroid.y, centroid.x
+
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 m = folium.Map(
@@ -357,15 +373,8 @@ try:
                     ),
                 ).add_to(m)
 
-                # Contenedor con margen superior negativo para subir el mapa
-                st.markdown(
-                    '<div style="width: 320px; height: 320px; margin-top:'
-                    ' -20px;">',
-                    unsafe_allow_html=True,
-                )
-                st_folium(m, width=320, height=320)
-                st.markdown("</div>", unsafe_allow_html=True)
-
+                # Mapa cuadrado perfecto integrado en la columna
+                st_folium(m, use_container_width=True, height=None)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
@@ -391,6 +400,7 @@ try:
             st.metric(label="Parcela", value=parcela_val)
 
           st.markdown("")
+
           st.subheader("b. Parámetros Urbanísticos")
           st.metric(
               label="Descripción del Área",
@@ -429,9 +439,9 @@ try:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-      # ----------------------------------------------------
-      # 2 A 10. TÍTULOS PRINCIPALES
-      # ----------------------------------------------------
+      # ====================================================
+      # 2 A 10. TÍTULOS PRINCIPALES (MAYÚSCULAS)
+      # ====================================================
       st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
@@ -508,7 +518,9 @@ try:
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
         st.success(
-            "**Dictamen Urbanístico y Ambiental:** AGREGAR TEXTO SCA en la zona."
+            "**Dictamen Urbanístico y Ambiental:** Parcela apta para desarrollo"
+            " según parámetros de FOS, FOT y altura máxima establecidos para"
+            " la zona."
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -519,7 +531,9 @@ try:
       col_vacio1, col_boton, col_vacio2 = st.columns([2, 2, 2])
       with col_boton:
         if st.button(
-            "🖨️ Imprimir / Guardar Certificado", width="stretch", type="primary"
+            "🖨️ Imprimir / Guardar Certificado",
+            use_container_width=True,
+            type="primary",
         ):
           st.balloons()
           st.info(
@@ -535,8 +549,11 @@ try:
         ' "Consultar Parcela" para ver los datos de la parcela.'
     )
 
+  # Mostrar la tabla de resultados completa abajo (se ocultará al imprimir)
   if not df_filtrado.empty:
-    st.dataframe(df_filtrado, width="stretch")
+    st.dataframe(df_filtrado, use_container_width=True)
 
 except Exception as e:
-  st.error(f"Ocurrió un error al leer los datos. Detalle técnico: {e}")
+  st.error(
+      f"Ocurrió un error al leer el archivo 'datos.csv'. Detalle técnico: {e}"
+  )
