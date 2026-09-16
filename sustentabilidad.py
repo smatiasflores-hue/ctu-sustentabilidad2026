@@ -353,13 +353,18 @@ try:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
                 centroid = gdf_parcela.unary_union.centroid
-                lat, lon = centroid.y, centroid.x
+lat, lon = centroid.y, centroid.x
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 m = folium.Map(
-                    location=[lat, lon], zoom_start=19, tiles="OpenStreetMap"
-                )
+    location=[lat, lon],
+    zoom_start=19,
+    tiles="OpenStreetMap",
+    zoom_control=False,  # Bloquea los botones de zoom
+    dragging=False,  # Bloquea el movimiento de arrastre
+    scrollWheelZoom=False,  # Bloquea el zoom con la rueda
+)
                 folium.GeoJson(
                     gdf_parcela,
                     style_function=lambda x: {
