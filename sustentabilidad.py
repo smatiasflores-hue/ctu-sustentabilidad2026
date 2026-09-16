@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados con reglas de impresión optimizadas
+# Estilos CSS avanzados con reglas de impresión limpias para evitar superposiciones
 st.markdown(
     """
     <style>
@@ -91,7 +91,7 @@ st.markdown(
         }
         
         /* ========================================================
-            CONFIGURACIÓN ESTRICTA Y LIMPIA PARA IMPRESIÓN / PDF
+            CONFIGURACIÓN DE IMPRESIÓN / PDF OPTIMIZADA
             ======================================================== */
         @media print {
             .stSidebar { display: none !important; }
@@ -105,27 +105,20 @@ st.markdown(
             
             body { background: white; color: black; }
             
-            /* Evitar superposiciones convirtiendo las columnas en bloques ordenados al imprimir */
+            /* Permitir flujo normal de columnas al imprimir sin romper páginas */
             [data-testid="column"] {
-                width: 100% !important;
-                display: block !important;
-                clear: both !important;
-                page-break-inside: avoid;
+                width: 48% !important;
+                display: inline-block !important;
+                vertical-align: top !important;
             }
             
-            /* Fijar proporciones cuadradas exactas del mapa y evitar que flote sobre el texto */
+            /* Mantener el mapa cuadrado y fijo sin que flote ni invada texto */
             iframe {
-                width: 320px !important;
-                height: 320px !important;
-                max-height: 320px !important;
+                width: 300px !important;
+                height: 300px !important;
+                max-height: 300px !important;
                 display: block !important;
-                position: relative !important;
-                page-break-inside: avoid;
-                margin-bottom: 15px !important;
-            }
-            
-            div {
-                page-break-inside: avoid;
+                position: static !important;
             }
         }
     </style>
