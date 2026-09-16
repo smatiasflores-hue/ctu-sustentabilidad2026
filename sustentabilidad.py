@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Estilos CSS avanzados: Control de columnas, proporción de mapa y saltos de página para PDF
+# Estilos CSS avanzados: Reducción de espacios y proporción fija para el mapa
 st.markdown(
     """
     <style>
@@ -69,7 +69,7 @@ st.markdown(
             color: #0d3b66;
         }
 
-        /* Clase específica para forzar el salto de página antes del punto 2 al imprimir */
+        /* Clase para forzar salto de página antes del punto 2 al imprimir */
         .salto-pagina {
             break-before: page;
             page-break-before: always;
@@ -96,7 +96,7 @@ st.markdown(
             margin-left: 15px;
         }
 
-        /* Forzar formato cuadrado exacto para el mapa */
+        /* Forzar formato cuadrado para el mapa */
         iframe {
             width: 100% !important;
             height: 280px !important;
@@ -125,8 +125,8 @@ st.markdown(
             
             iframe {
                 width: 100% !important;
-                height: 200px !important;
-                max-height: 200px !important;
+                height: 280px !important;
+                max-height: 280px !important;
                 page-break-inside: avoid;
             }
         }
@@ -325,14 +325,13 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS (Proporción 1/3 para el mapa y 2/3 para textos)
+      # 1. DATOS
       # ====================================================
       st.header("1. DATOS")
 
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
 
-        # Usamos la proporción [1, 2] para que el mapa ocupe 1/3 y los datos 2/3
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         with col_mapa:
@@ -353,24 +352,19 @@ try:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
                 centroid = gdf_parcela.unary_union.centroid
-lat, lon = centroid.y, centroid.x
+                lat, lon = centroid.y, centroid.x
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 m = folium.Map(
-    location=[lat, lon],
-    zoom_start=19,
-    tiles="OpenStreetMap",
-    zoom_control=False,  # Bloquea los botones de zoom
-    dragging=False,  # Bloquea el movimiento de arrastre
-    scrollWheelZoom=False,  # Bloquea el zoom con la rueda
-)
+                    location=[lat, lon], zoom_start=19, tiles="OpenStreetMap"
+                )
                 folium.GeoJson(
                     gdf_parcela,
                     style_function=lambda x: {
                         "fillColor": "#1f77b4",
                         "color": "#0d3b66",
-                        "weight": 1,
+                        "weight": 2,
                         "fillOpacity": 0.6,
                     },
                     tooltip=(
@@ -379,7 +373,7 @@ lat, lon = centroid.y, centroid.x
                     ),
                 ).add_to(m)
 
-                st_folium(m, use_container_width=True, height=280)
+                st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
@@ -445,7 +439,7 @@ lat, lon = centroid.y, centroid.x
         st.markdown("</div>", unsafe_allow_html=True)
 
       # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES (Con salto de página forzado antes del 2)
+      # 2 A 10. TÍTULOS PRINCIPALES
       # ====================================================
       st.markdown(
           '<div class="salto-pagina"></div>', unsafe_allow_html=True
