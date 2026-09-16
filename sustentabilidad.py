@@ -355,7 +355,7 @@ try:
                     ),
                 ).add_to(m)
 
-                st_folium(m, width=380, height=380)
+                st_folium(m, width=330, height=330)
                 st.metric(label="Calle Referencia", value=calle_detectada)
               else:
                 st.info(
