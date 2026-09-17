@@ -159,6 +159,22 @@ def obtener_calle_cercana(lat, lon):
   return "No disponible"
 
 
+# Función auxiliar para extraer el número y letra de parcela desde un valor CCA
+def extraer_parcela_de_cca(cca_str):
+  try:
+    segmento_par = cca_str[35:] if len(cca_str) >= 35 else cca_str
+    match_par = re.search(r"(\d+)([A-Za-z]*)", segmento_par)
+    if match_par:
+      num_p = match_par.group(1).lstrip("0").rstrip("0")
+      if not num_p:
+        num_p = match_par.group(1).lstrip("0")
+      letra_p = match_par.group(2).upper()
+      return f"{num_p}{letra_p}" if letra_p else (num_p if num_p else "-")
+  except Exception:
+    pass
+  return "-"
+
+
 # Función para generar el documento Word basado en una plantilla (.docx)
 def generar_documento_word(contexto_datos):
   try:
@@ -337,21 +353,7 @@ try:
       except Exception:
         manzana_val = "N/D"
 
-      try:
-        segmento_par = cca_val[35:] if len(cca_val) >= 35 else cca_val
-        match_par = re.search(r"(\d+)([A-Za-z]*)", segmento_par)
-        if match_par:
-          num_p = match_par.group(1).lstrip("0").rstrip("0")
-          if not num_p:
-            num_p = match_par.group(1).lstrip("0")
-          letra_p = match_par.group(2).upper()
-          parcela_val = (
-              f"{num_p}{letra_p}" if letra_p else (num_p if num_p else "-")
-          )
-        else:
-          parcela_val = "-"
-      except Exception:
-        parcela_val = "-"
+      parcela_val = extraer_parcela_de_cca(cca_val)
 
       df_cca_match = df[df["CCA"].astype(str) == cca_val]
 
@@ -367,7 +369,7 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS (Con mapa y sección de Lotes Linderos abajo)
+      # 1. DATOS
       # ====================================================
       st.header("1. DATOS")
 
@@ -416,7 +418,6 @@ try:
                 except Exception:
                   linderos_vecinos = gpd.GeoDataFrame()
 
-                # Mapa centrado con controles bloqueados
                 m = folium.Map(
                     location=[lat, lon],
                     zoom_start=19,
@@ -426,7 +427,6 @@ try:
                     scrollWheelZoom=False,
                 )
 
-                # Dibujar linderos vecinos en gris sutil
                 if not linderos_vecinos.empty:
                   if linderos_vecinos.crs != "EPSG:4326":
                     linderos_vecinos = linderos_vecinos.to_crs("EPSG:4326")
@@ -441,7 +441,6 @@ try:
                       tooltip="Lote Lindero",
                   ).add_to(m)
 
-                # Dibujar lote principal destacado en azul
                 folium.GeoJson(
                     gdf_parcela,
                     style_function=lambda x: {
@@ -469,39 +468,39 @@ try:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
           # ====================================================
-          # NUEVA SECCIÓN: Lotes Linderos debajo de la ubicación
+          # SECCIÓN: Listado de Lotes Linderos con Número y Letra de Parcela
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("Lotes Linderos")
           if not linderos_vecinos.empty:
-            # Intentamos extraer los identificadores de los linderos encontrados
             col_id = (
                 col_match
                 if col_match in linderos_vecinos.columns
                 else linderos_vecinos.columns[0]
             )
-            linderos_ids = (
-                linderos_vecinos[col_id]
-                .dropna()
-                .astype(str)
-                .unique()
-                .tolist()
-            )
+            
+            # Recorremos cada lote lindero vecino y le aplicamos la misma extracción de parcela
+            linderos_procesados = []
+            for _, row_lindero in linderos_vecinos.iterrows():
+              cca_lindero = str(row_lindero.get(col_id, ""))
+              num_letra_parcela = extraer_parcela_de_cca(cca_lindero)
+              if num_letra_parcela and num_letra_parcela != "-":
+                linderos_procesados.append(num_letra_parcela)
 
-            if linderos_ids:
-              # Mostramos una lista limpia o métrica con los vecinos detectados
-              for idx, lid in enumerate(
-                  linderos_ids[:8], 1
-              ):  # Mostramos hasta 8 linderos máximo
+            # Eliminamos duplicados si los hubiera
+            linderos_procesados = sorted(list(set(linderos_procesados)))
+
+            if linderos_procesados:
+              for idx, parc in enumerate(linderos_procesados[:10], 1):
                 st.markdown(
                     f"<p style='margin: 0px 0px 4px 0px; font-size:12px;'"
-                    f" color:#555;'>• Lindero {idx}: <code>{lid}</code></p>",
+                    f" color:#555;'>• Parcela {parc}</p>",
                     unsafe_allow_html=True,
                 )
             else:
               st.markdown(
-                  "<p style='font-size:12px; color:#666;'>No se registran"
-                  " identificadores para los linderos.</p>",
+                  "<p style='font-size:12px; color:#666;'>No se pudieron extraer"
+                  " las parcelas linderas.</p>",
                   unsafe_allow_html=True,
               )
           else:
