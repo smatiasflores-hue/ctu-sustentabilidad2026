@@ -68,17 +68,17 @@ st.markdown(
 )
 
 
-# Función corregida y unificada para capturar múltiples calles cercanas (ideal para esquinas)
+# Función para capturar múltiples calles cercanas (solucionado el hash con _geom_parcela)
 @st.cache_data(ttl=86400, show_spinner=False)
-def obtener_calles_cercanas_lote(geom_parcela):
+def obtener_calles_cercanas_lote(_geom_parcela):
   calles_encontradas = set()
   try:
     headers = {"User-Agent": "CertificadoTecnicoUrbanistico/2.0"}
-    c = geom_parcela.centroid
+    c = _geom_parcela.centroid
     puntos_a_consultar = [(c.y, c.x)]
 
     try:
-      coords = list(geom_parcela.exterior.coords)
+      coords = list(_geom_parcela.exterior.coords)
       for pt in coords[:: max(1, len(coords) // 4)]:
         puntos_a_consultar.append((pt[1], pt[0]))
     except Exception:
