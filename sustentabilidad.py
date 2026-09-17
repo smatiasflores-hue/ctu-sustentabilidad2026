@@ -131,20 +131,24 @@ def obtener_orientacion(geom_principal, geom_lindero):
   dx = c_lind.x - c_prin.x
   dy = c_lind.y - c_prin.y
 
-  dir_y = "Norte" if dy > 0 else "Sur"
-  dir_x = "Este" if dx > 0 else "Oeste"
+  angulo = np.degrees(np.arctan2(dy, dx)) % 360
 
-  if abs(dx) < 0.00001:
-    return "Norte" if dy > 0 else "Sur"
-  if abs(dy) < 0.00001:
-    return "Este" if dx > 0 else "Oeste"
-
-  if abs(dy) > abs(dx) * 2:
-    return "Norte" if dy > 0 else "Sur"
-  elif abs(dx) > abs(dy) * 2:
-    return "Este" if dx > 0 else "Oeste"
+  if 22.5 <= angulo < 67.5:
+    return "Norte-Este"
+  elif 67.5 <= angulo < 112.5:
+    return "Este"
+  elif 112.5 <= angulo < 157.5:
+    return "Sur-Este"
+  elif 157.5 <= angulo < 202.5:
+    return "Sur"
+  elif 202.5 <= angulo < 247.5:
+    return "Sur-Oeste"
+  elif 247.5 <= angulo < 292.5:
+    return "Oeste"
+  elif 292.5 <= angulo < 337.5:
+    return "Norte-Oeste"
   else:
-    return f"{dir_y}-{dir_x}"
+    return "Norte"
 
 
 # Función para determinar si el lote es esquina o entre medianeras
@@ -173,15 +177,13 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función inteligente para determinar la Línea Municipal en base al lado más cercano al frente / calle
+# Función de precisión milimétrica para calcular rumbos de 8 puntos (incluye Sudoeste, Sudeste, etc.)
 def determinar_linea_municipal_por_frente(geom_parcela, calle_seleccionada):
   vertices = obtener_vertices_parcela(geom_parcela)
   if not vertices:
     return "Frente Principal (No determinada)"
 
   c_prin = geom_parcela.centroid
-  # Analizamos cada lado (arista) del polígono para ver cuál está más hacia el Norte, Sur, Este u Oeste
-  # Dependiendo del nombre de la calle o la posición geográfica del segmento respecto al centroide
   mejores_lados = []
   num_v = len(vertices)
 
@@ -193,23 +195,40 @@ def determinar_linea_municipal_por_frente(geom_parcela, calle_seleccionada):
 
     dx = mx - c_prin.x
     dy = my - c_prin.y
+    distancia_al_centro = np.hypot(dx, dy)
 
-    # Determinamos la dirección predominante de este segmento respecto al centro del lote
-    if abs(dy) >= abs(dx):
-      cardinal = "Norte" if dy > 0 else "Sur"
-    else:
-      cardinal = "Este" if dx > 0 else "Oeste"
+    # Cálculo exacto del ángulo en grados (0 a 360)
+    angulo = np.degrees(np.arctan2(dy, dx)) % 360
 
-    mejores_lados.append((i + 1, cardinal, np.hypot(dx, dy)))
+    mejores_lados.append((i + 1, angulo, distancia_al_centro))
 
-  # Ordenamos por distancia al centroide (los lados exteriores están más lejos del centro que los medianeros internos)
+  # Seleccionamos la arista más externa (la más alejada del centroide del lote)
   mejores_lados.sort(key=lambda x: x[2], reverse=True)
 
   if mejores_lados:
-    num_lado, orientacion_cardinal, _ = mejores_lados[0]
-    return f"{orientacion_cardinal} (Frente a {calle_seleccionada})"
+    _, angulo_frente, _ = mejores_lados[0]
 
-  return "Frente Principal"
+    # Mapeo preciso de 8 rumbos cartográficos
+    if 22.5 <= angulo_frente < 67.5:
+      rumbo = "Noreste"
+    elif 67.5 <= angulo_frente < 112.5:
+      rumbo = "Este"
+    elif 112.5 <= angulo_frente < 157.5:
+      rumbo = "Sudeste"
+    elif 157.5 <= angulo_frente < 202.5:
+      rumbo = "Sur"
+    elif 202.5 <= angulo_frente < 247.5:
+      rumbo = "Sudoeste"
+    elif 247.5 <= angulo_frente < 292.5:
+      rumbo = "Oeste"
+    elif 292.5 <= angulo_frente < 337.5:
+      rumbo = "Noroeste"
+    else:
+      rumbo = "Norte"
+
+    return f"{rumbo} (Frente a {calle_seleccionada})"
+
+  return f"Frente a {calle_seleccionada}"
 
 
 # Función para calcular las medidas automáticas con calibración métrica
@@ -700,8 +719,6 @@ try:
 
         with col_datos:
           st.subheader("a. Datos Catastrales")
-
-          # PRIMERO definimos el selector de calle para que su valor esté disponible al calcular la LM
           st.subheader("📍 Calle de Referencia (Frente del Inmueble)")
 
         with col_mapa:
@@ -873,7 +890,6 @@ try:
                 key="calle_editable_input",
             )
 
-          # Determinamos la Línea Municipal en base a la geometría y la calle seleccionada
           if geom_principal is not None:
             orientacion_lm = determinar_linea_municipal_por_frente(
                 geom_principal, calle_input
