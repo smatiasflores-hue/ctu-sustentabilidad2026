@@ -174,7 +174,7 @@ def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
     return "Entre Medianeras"
 
 
-# Función para extraer y ordenar los vértices de la parcela principal
+# Función para extraer vértices de la parcela
 def obtener_vertices_parcela(geom_parcela):
   try:
     geom_tipo = geom_parcela.geom_type
@@ -191,10 +191,8 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función avanzada: Genera el croquis con las medidas escritas en cada lado correspondiente
-def generar_imagen_croquis_con_medidas(
-    gdf_parcela, linderos_vecinos, medidas_lados
-):
+# Función avanzada: Genera el croquis con medidas automáticas calculadas y estilo de círculo en la parcela
+def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
   ax.set_xticks([])
@@ -237,6 +235,8 @@ def generar_imagen_croquis_con_medidas(
     parc_prin = extraer_parcela_de_cca(
         str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
     )
+
+    # Dibujar número/letra de parcela encerrado en un círculo (Estilo CartoARBA)
     ax.text(
         c_prin.x,
         c_prin.y,
@@ -246,10 +246,18 @@ def generar_imagen_croquis_con_medidas(
         va="center",
         color="#000000",
         weight="bold",
+        bbox=dict(
+            boxstyle="circle,pad=0.3",
+            facecolor="white",
+            edgecolor="black",
+            linewidth=1.5,
+        ),
     )
 
+    # Cálculo automático de medidas métricas aproximadas basadas en la geometría proyectada
     vertices = obtener_vertices_parcela(geom_prin)
-    if vertices and len(medidas_lados) == len(vertices):
+    if vertices:
+      # Proyectamos temporalmente a UTM o usamos factor de conversión local para La Plata (aprox 1 grado = 111000m)
       num_v = len(vertices)
       for i in range(num_v):
         p1 = vertices[i]
@@ -258,24 +266,28 @@ def generar_imagen_croquis_con_medidas(
         mx = (p1[0] + p2[0]) / 2.0
         my = (p1[1] + p2[1]) / 2.0
 
-        medida_texto = medidas_lados[i]
-        if medida_texto and medida_texto.strip() != "":
-          ax.text(
-              mx,
-              my,
-              medida_texto.strip(),
-              fontsize=8,
-              ha="center",
-              va="center",
-              color="#000000",
-              weight="bold",
-              bbox=dict(
-                  boxstyle="round,pad=0.1",
-                  facecolor="white",
-                  edgecolor="none",
-                  alpha=0.8,
-              ),
-          )
+        # Distancia euclidiana convertida a metros aproximados para lat/lon en Buenos Aires
+        dist_grados = np.hypot(p2[0] - p1[0], p2[1] - p1[1])
+        dist_metros = round(
+            dist_grados * 111320 * np.cos(np.radians(my)), 1
+        )  # Metros reales estimados
+
+        ax.text(
+            mx,
+            my,
+            f"{dist_metros}",
+            fontsize=7,
+            ha="center",
+            va="center",
+            color="#111111",
+            weight="bold",
+            bbox=dict(
+                boxstyle="round,pad=0.1",
+                facecolor="white",
+                edgecolor="none",
+                alpha=0.8,
+            ),
+        )
 
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
     margen_x = (maxx - minx) * 0.25 if maxx != minx else 0.0001
@@ -591,22 +603,6 @@ try:
           else [str(row.get("observacio_2", "N/D"))]
       )
 
-      try:
-        gdf_temp = cargar_geojson()
-        col_m_temp = None
-        for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
-          if c in gdf_temp.columns:
-            col_m_temp = c
-            break
-        gdf_p_temp = gdf_temp[gdf_temp[col_m_temp].astype(str) == cca_val]
-        geom_p_temp = gdf_p_temp.geometry.iloc[0] if not gdf_p_temp.empty else None
-        vertices_temp = (
-            obtener_vertices_parcela(geom_p_temp) if geom_p_temp else []
-        )
-        num_lados_detectados = len(vertices_temp) if vertices_temp else 4
-      except Exception:
-        num_lados_detectados = 4
-
       # ====================================================
       # 1. DATOS
       # ====================================================
@@ -825,44 +821,20 @@ try:
             st.markdown("- N/D")
 
           # ====================================================
-          # INGRESO DINÁMICO DE MEDIDAS POR LADO (ARISTAS)
-          # ====================================================
-          st.subheader("📏 Carga de Medidas por Lado (Aristas)")
-          st.markdown(
-              f"<p style='font-size:12px; color:#555;'>Se detectaron"
-              f" <b>{num_lados_detectados} lados</b> en el polígono. Ingrese"
-              " las medidas para que aparezcan impresas:</p>",
-              unsafe_allow_html=True,
-          )
-
-          medidas_ingresadas = []
-          cols_medidas = st.columns(min(num_lados_detectados, 4))
-          for i in range(num_lados_detectados):
-            col_idx = i % 4
-            with cols_medidas[col_idx]:
-              val_m = st.text_input(
-                  f"Lado {i+1}",
-                  value="",
-                  placeholder=f"Ej: {10+i*2}",
-                  key=f"lado_{i}",
-              )
-              medidas_ingresadas.append(val_m)
-
-          # ====================================================
-          # VISTA PREVIA DE CONTROL (Segundo Mapa en Pantalla)
+          # VISTA PREVIA DE CONTROL (Croquis con medidas automáticas y círculo)
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
-          st.subheader("👁️ Vista Previa de Control (Croquis con Medidas)")
+          st.subheader("👁️ Vista Previa del Croquis Automático")
           try:
             if not gdf_parcela.empty:
-              img_prev = generar_imagen_croquis_con_medidas(
-                  gdf_parcela, linderos_vecinos, medidas_ingresadas
+              img_prev = generar_imagen_croquis_automatico(
+                  gdf_parcela, linderos_vecinos
               )
               st.image(
                   img_prev,
                   caption=(
-                      "Vista previa exacta del croquis que se imprimirá en el"
-                      " Word"
+                      "Medidas automáticas calculadas desde el GeoJSON y"
+                      " número de parcela en círculo"
                   ),
                   width=350,
               )
@@ -898,8 +870,8 @@ try:
       buffer_imagen_zonificacion = None
       try:
         if not gdf_parcela.empty:
-          buffer_imagen_mapa = generar_imagen_croquis_con_medidas(
-              gdf_parcela, linderos_vecinos, medidas_ingresadas
+          buffer_imagen_mapa = generar_imagen_croquis_automatico(
+              gdf_parcela, linderos_vecinos
           )
           buffer_imagen_zonificacion = generar_imagen_zonificacion(
               gdf_parcela, linderos_vecinos, df, col_match
