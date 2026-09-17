@@ -68,46 +68,47 @@ st.markdown(
 )
 
 
-# Función de geolocalización ampliada
+# Función inteligente para capturar múltiples calles cercanas (ideal para esquinas)
 @st.cache_data(ttl=86400, show_spinner=False)
-def obtener_calle_cercana(lat, lon):
+def obtener_calles_cercanas_lote(geom_parcela):
+  calles_encontradas = set()
   try:
     headers = {"User-Agent": "CertificadoTecnicoUrbanistico/2.0"}
-    url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=17&addressdetails=1"
-    response = requests.get(url, headers=headers, timeout=3)
-    if response.status_code == 200:
-      data = response.json()
-      address = data.get("address", {})
-      calle = (
-          address.get("road")
-          or address.get("pedestrian")
-          or address.get("footway")
-          or address.get("suburb")
-      )
-      if calle:
-        return calle
 
-    for dlat, dlon in [
-        (0.00015, 0),
-        (-0.00015, 0),
-        (0, 0.00015),
-        (0, -0.00015),
-    ]:
-      url_alt = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat+dlat}&lon={lon+dlon}&zoom=17&addressdetails=1"
-      resp_alt = requests.get(url_alt, headers=headers, timeout=2)
-      if resp_alt.status_code == 200:
-        data_alt = resp_alt.json()
-        addr_alt = data_alt.get("address", {})
-        calle_alt = (
-            addr_alt.get("road")
-            or addr_alt.get("pedestrian")
-            or addr_alt.get("footway")
+    # 1. Obtener centroide y vértices externos del lote
+    c = geom_parcela.centroid
+    puntos_a_consultar = [(c.y, c.x)]
+
+    try:
+      coords = list(geom_parcela.exterior.coords)
+      # Tomamos algunos vértices clave para buscar calles circundantes (esquinas/frentes)
+      for pt in coords[:: max(1, len(coords) // 4)]:
+        puntos_a_consultar.append((pt[1], pt[0]))
+    except Exception:
+      pass
+
+    for lat, lon in puntos_a_consultar:
+      url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=17&addressdetails=1"
+      response = requests.get(url, headers=headers, timeout=2)
+      if response.status_code == 200:
+        data = response.json()
+        address = data.get("address", {})
+        calle = (
+            address.get("road")
+            or address.get("pedestrian")
+            or address.get("footway")
         )
-        if calle_alt:
-          return calle_alt
+        if calle:
+          calles_encontradas.add(calle)
   except Exception:
     pass
-  return ""
+
+  lista_resultado = list(calles_encontradas)
+  return (
+      lista_resultado
+      if lista_resultado
+      else ["Calle no identificada / Manual"]
+  )
 
 
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
@@ -177,14 +178,11 @@ def obtener_vertices_parcela(geom_parcela):
 
 # Función para calcular las medidas automáticas con el factor de calibración métrica ultrafino
 def calcular_medidas_automaticas(geom_parcela):
-  """Calcula las longitudes de los lados en metros usando un CRS UTM local."""
   vertices = obtener_vertices_parcela(geom_parcela)
   if not vertices:
     return []
 
   try:
-    # La geometría del mapa está en EPSG:4326. Para medir, proyectamos
-    # temporalmente a la zona UTM correspondiente.
     gdf_tmp = gpd.GeoDataFrame(geometry=[geom_parcela], crs="EPSG:4326")
     crs_metrico = gdf_tmp.estimate_utm_crs()
     geom_metrica = gdf_tmp.to_crs(crs_metrico).geometry.iloc[0]
@@ -201,6 +199,7 @@ def calcular_medidas_automaticas(geom_parcela):
     medidas.append(str(dist_metros))
 
   return medidas
+
 
 # Función avanzada: Croquis con medidas editables y círculo en la parcela (Estilo CartoARBA)
 def generar_imagen_croquis_con_medidas(
@@ -249,7 +248,6 @@ def generar_imagen_croquis_con_medidas(
         str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
     )
 
-    # Círculo negro alrededor del número/letra de parcela
     ax.text(
         c_prin.x,
         c_prin.y,
@@ -462,45 +460,49 @@ def generar_documento_word(contexto_datos):
 # Carga optimizada y ligera del CSV desde GitHub
 @st.cache_data
 def cargar_datos():
-  """Carga y normaliza el CSV una sola vez por sesión/cache."""
   url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
   columnas_utiles = [
-      "CCA", "PDA", "descripcio", "descripcio_2", "designacio",
-      "fos", "fota", "hmax", "dec_ma", "observacio_2",
+      "CCA",
+      "PDA",
+      "descripcio",
+      "descripcio_2",
+      "designacio",
+      "fos",
+      "fota",
+      "hmax",
+      "dec_ma",
+      "observacio_2",
   ]
-
   df = pd.read_csv(
-      url_csv, sep=";", encoding="latin-1", low_memory=False,
-      usecols=lambda col: col in columnas_utiles, on_bad_lines="skip",
+      url_csv,
+      sep=";",
+      encoding="latin-1",
+      low_memory=False,
+      usecols=lambda col: col in columnas_utiles,
+      on_bad_lines="skip",
   )
-
-  # Normalizaciones costosas: se hacen una sola vez, no en cada rerun de Streamlit.
   df["CCA"] = df["CCA"].fillna("").astype(str).str.strip()
   df["PDA_limpio"] = (
       df["PDA"].fillna("").astype(str).str.split(".").str[0].str.zfill(9)
   )
-
-  # Índices livianos para evitar recorrer todo el DataFrame en cada consulta.
   indice_pda = df.groupby("PDA_limpio", sort=False).indices
   indice_cca = df.groupby("CCA", sort=False).indices
-
   return df, indice_pda, indice_cca
+
 
 # Carga optimizada del GeoJSON desde GitHub
 @st.cache_data
 def cargar_geojson():
-  """Carga el GeoJSON una sola vez y normaliza su columna identificadora."""
   url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
   gdf = gpd.read_file(url_geojson)
-
   col_match = next(
       (c for c in ["CCA", "cca", "PDA", "pda", "Partida"] if c in gdf.columns),
       None,
   )
   if col_match:
     gdf[col_match] = gdf[col_match].fillna("").astype(str).str.strip()
-
   return gdf, col_match
+
 
 # Encabezado superior
 st.markdown(
@@ -650,7 +652,7 @@ try:
 
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
-        calle_detectada = ""
+        calles_detectadas = []
         linderos_vecinos = gpd.GeoDataFrame()
         gdf_parcela = gpd.GeoDataFrame()
         geom_principal = None
@@ -664,13 +666,13 @@ try:
           st.subheader("Ubicación del Lote")
           try:
             col_match = col_match_geo
-
             if col_match:
               try:
                 indices_geo = gdf.index[gdf[col_match].eq(cca_val)]
                 gdf_parcela = gdf.loc[indices_geo].copy()
               except Exception:
                 gdf_parcela = gpd.GeoDataFrame(columns=gdf.columns, crs=gdf.crs)
+
               if not gdf_parcela.empty:
                 if gdf_parcela.crs and gdf_parcela.crs.to_epsg() != 4326:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
@@ -681,8 +683,8 @@ try:
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
-                # Geolocalización estándar
-                calle_detectada = obtener_calle_cercana(lat, lon)
+                # Capturamos todas las calles cercanas (ideal para esquinas)
+                calles_detectadas = obtener_calles_cercana_lote(geom_principal)
 
                 minx, miny, maxx, maxy = geom_principal.bounds
                 if (centroid.x - minx) > (centroid.y - miny):
@@ -717,7 +719,10 @@ try:
                 )
 
                 if not linderos_vecinos.empty:
-                  if linderos_vecinos.crs and linderos_vecinos.crs.to_epsg() != 4326:
+                  if (
+                      linderos_vecinos.crs
+                      and linderos_vecinos.crs.to_epsg() != 4326
+                  ):
                     linderos_vecinos = linderos_vecinos.to_crs("EPSG:4326")
 
                   folium.GeoJson(
@@ -777,10 +782,7 @@ try:
                     label="Orientación Línea Municipal", value=orientacion_lm
                 )
                 st.metric(
-                    label="Calle Referencia (Auto)",
-                    value=calle_detectada
-                    if calle_detectada
-                    else "No disponible",
+                    label="Calles Detectadas", value=", ".join(calles_detectadas)
                 )
 
               else:
@@ -824,27 +826,26 @@ try:
         with col_datos:
           st.subheader("a. Datos Catastrales")
 
-          # Selector inteligente para esquinas / frente principal o escritura manual
+          # Selector de calles cercanas / esquinas con autocompletado en cascada
           st.subheader("📍 Calle de Referencia (Frente del Inmueble)")
-          opciones_calle = [
-              calle_detectada if calle_detectada else "Calle no identificada",
-              "Escribir manualmente...",
+
+          opciones_selector = list(calles_detectadas) + [
+              "Escribir manualmente..."
           ]
-          # Si detectamos linderos o es esquina, podemos sugerir alternativas comunes o dejar la opción libre
-          seleccion_calle = st.selectbox(
-              "Seleccione o confirme la calle del frente principal:",
-              options=opciones_calle,
-              key="select_calle_frente",
+          calle_seleccionada_combo = st.selectbox(
+              "Seleccione la calle del frente principal:",
+              options=opciones_selector,
+              key="combo_calle_frente",
           )
 
-          if seleccion_calle == "Escribir manualmente...":
+          if calle_seleccionada_combo == "Escribir manualmente...":
             calle_input = st.text_input(
                 "Ingrese la calle del frente:", value="", key="calle_manual_input"
             )
           else:
             calle_input = st.text_input(
-                "Edite si es necesario:",
-                value=seleccion_calle,
+                "Calle seleccionada (editable):",
+                value=calle_seleccionada_combo,
                 key="calle_editable_input",
             )
 
