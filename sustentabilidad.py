@@ -19,19 +19,14 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-        /* Reducir el espacio superior predeterminado de Streamlit */
         .block-container {
             padding-top: 1.0rem !important;
             padding-bottom: 2rem !important;
         }
-
-        /* 1. Tipografía Global */
         html, body, [class*="css"] {
             font-family: 'Arial', Helvetica, sans-serif !important;
             color: #2c3e50;
         }
-
-        /* 2. Estilo de la Portada / Título Principal */
         h1 {
             font-size: 26px !important;
             font-weight: 800 !important;
@@ -40,8 +35,6 @@ st.markdown(
             margin-top: -5px !important;
             margin-bottom: 2px !important;
         }
-
-        /* 3. Valores de las métricas */
         [data-testid="stMetricValue"] {
             font-size: 18px !important;
             font-weight: 700 !important;
@@ -49,8 +42,6 @@ st.markdown(
             white-space: normal !important;
             overflow: visible !important;
         }
-        
-        /* 4. Etiquetas de las métricas */
         [data-testid="stMetricLabel"] {
             font-size: 12px !important;
             font-weight: 600 !important;
@@ -58,8 +49,6 @@ st.markdown(
             white-space: normal !important;
             text-transform: uppercase;
         }
-
-        /* 5. Títulos principales (2 al 10): Mayúsculas y Bold */
         h2 {
             font-size: 16px !important;
             font-weight: 700 !important;
@@ -71,8 +60,6 @@ st.markdown(
             color: #0d3b66;
             break-after: avoid;
         }
-
-        /* 6. Subtítulos */
         h3 {
             font-size: 14px !important;
             font-weight: 700 !important;
@@ -81,55 +68,32 @@ st.markdown(
             margin-bottom: 4px !important;
             color: #333333;
         }
-
-        /* 7. Textos descriptivos */
         p, li, span {
             font-size: 13px !important;
             font-weight: 400 !important;
             line-height: 1.3;
         }
-
         .contenido-sangria {
             margin-left: 15px;
         }
-
-        /* Forzar formato cuadrado para el mapa */
         iframe {
             width: 100% !important;
             height: 280px !important;
             max-height: 280px !important;
             border-radius: 4px;
         }
-        
-        /* Configuración estricta para impresión / PDF limpio y fluido */
         @media print {
             .stSidebar { display: none !important; }
             header { display: none !important; }
             button { display: none !important; }
             .stButton { display: none !important; }
-            
             .stSelectbox { display: none !important; }
             .stWarning { display: none !important; }
             [data-testid="stDataFrame"] { display: none !important; }
-            
             body { background: white; color: black; }
-            
-            * {
-                overflow: visible !important;
-                text-overflow: unset !important;
-                white-space: normal !important;
-            }
-            
-            div {
-                page-break-inside: avoid;
-            }
-            
-            iframe {
-                width: 100% !important;
-                height: 280px !important;
-                max-height: 280px !important;
-                page-break-inside: avoid;
-            }
+            * { overflow: visible !important; text-overflow: unset !important; white-space: normal !important; }
+            div { page-break-inside: avoid; }
+            iframe { width: 100% !important; height: 280px !important; max-height: 280px !important; page-break-inside: avoid; }
         }
     </style>
 """,
@@ -216,28 +180,35 @@ def generar_documento_word(contexto_datos):
     doc.add_heading("Certificado Técnico Urbanístico", 0)
 
   reemplazos = {
+      "{{PART}}": str(contexto_datos.get("partido", "")),
       "{{PDA}}": str(contexto_datos.get("pda", "")),
-      "{{PARTIDO}}": str(contexto_datos.get("partido", "")),
-      "{{CIRCUNSCRIPCION}}": str(contexto_datos.get("circunscripcion", "")),
-      "{{SECCION}}": str(contexto_datos.get("seccion", "")),
-      "{{MANZANA}}": str(contexto_datos.get("manzana", "")),
-      "{{PARCELA}}": str(contexto_datos.get("parcela", "")),
-      "{{CALLE}}": str(contexto_datos.get("calle", "")),
-      "{{ZONA}}": str(contexto_datos.get("zona", "")),
-      "{{FOS}}": str(contexto_datos.get("fos", "")),
-      "{{FOT}}": str(contexto_datos.get("fot", "")),
-      "{{ALTURA}}": str(contexto_datos.get("altura", "")),
-      "{{AREA}}": str(contexto_datos.get("area", "")),
-      "{{ORIENTACION_LM}}": str(contexto_datos.get("orientacion_lm", "")),
-      "{{TIPO_UBICACION}}": str(contexto_datos.get("tipo_ubicacion", "")),
-      "{{PROPIETARIO}}": str(contexto_datos.get("propietario", "")),
-      "{{PROFESIONAL}}": str(contexto_datos.get("profesional", "")),
+      "{{Circ}}": str(contexto_datos.get("circunscripcion", "")),
+      "{{Secc}}": str(contexto_datos.get("seccion", "")),
+      "{{Manz}}": str(contexto_datos.get("manzana", "")),
+      "{{PARC}}": str(contexto_datos.get("parcela", "")),
+      "{{Inscripcion_Dominio}}": str(
+          contexto_datos.get("inscripcion_dominio", "N/D")
+      ),
+      "{{CALL}}": str(contexto_datos.get("calle", "")),
+      "{{ARA}}": str(contexto_datos.get("area", "")),
+      "{{SUP}}": str(contexto_datos.get("superficie", "N/D")),
+      "{{LOLI}}": str(contexto_datos.get("linderos_texto", "")),
+      "{{MAPO}}": "[Croquis de Ubicación]",
+      "{{PROP}}": str(contexto_datos.get("propietario", "No indicado")),
       "{{AGUA}}": str(contexto_datos.get("agua", "")),
       "{{GAS}}": str(contexto_datos.get("gas", "")),
-      "{{CLOACA}}": str(contexto_datos.get("cloaca", "")),
-      "{{ELECTRICIDAD}}": str(contexto_datos.get("electricidad", "")),
-      "{{ALUMBRADO}}": str(contexto_datos.get("alumbrado", "")),
-      "{{PAVIMENTO}}": str(contexto_datos.get("pavimento", "")),
+      "{{CLOA}}": str(contexto_datos.get("cloaca", "")),
+      "{{ELEC}}": str(contexto_datos.get("electricidad", "")),
+      "{{ALUM}}": str(contexto_datos.get("alumbrado", "")),
+      "{{PAV}}": str(contexto_datos.get("pavimento", "")),
+      "{{ORDM}}": str(contexto_datos.get("ordenanza", "")),
+      "{{ZONA}}": str(contexto_datos.get("zona", "")),
+      "{{ud}}": str(
+          contexto_datos.get(
+              "usos_admitidos", "Usos acordes a normativa zonal vigente."
+          )
+      ),
+      "{{PROF}}": str(contexto_datos.get("profesional", "No indicado")),
   }
 
   for p in doc.paragraphs:
@@ -327,6 +298,9 @@ try:
   profesional_input = st.sidebar.text_input(
       "Profesional a cargo", placeholder="Arquitecto / Maestro Mayor de Obras"
   )
+  inscripcion_input = st.sidebar.text_input(
+      "Inscripción al Dominio", placeholder="Matrícula / Folio / Año"
+  )
 
   if consultar:
     if partida_input:
@@ -356,18 +330,15 @@ try:
 
       st.markdown('<div id="seccion-ficha"></div>', unsafe_allow_html=True)
 
-      # Selector de coincidencias múltiples
       if len(df_filtrado) > 1:
         st.warning(
             f"⚠️ Se encontraron {len(df_filtrado)} registros coincidentes para"
             " esta partida. Seleccione cuál desea visualizar en la ficha:"
         )
-
         opciones = {
             f"Fila {idx} - CCA: {row.get('CCA', 'N/D')} (Zona: {row.get('designacio', 'N/D')})": idx
             for idx, row in df_filtrado.iterrows()
         }
-
         seleccion_str = st.selectbox(
             "Seleccionar registro a consultar:", list(opciones.keys())
         )
@@ -376,9 +347,7 @@ try:
       else:
         row = df_filtrado.iloc[0]
 
-      # Extracción de campos
       cca_val = str(row.get("CCA", ""))
-
       partido_val = cca_val[0:3] if len(cca_val) >= 3 else "055"
       circunscripcion_val = cca_val[3:5] if len(cca_val) >= 5 else "-"
 
@@ -427,21 +396,6 @@ try:
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
 
-        # Muestra en pantalla los datos del Propietario y el Profesional si se ingresaron
-        if propietario_input or profesional_input:
-          c_inf1, c_inf2 = st.columns(2)
-          with c_inf1:
-            st.metric(
-                label="Propietario",
-                value=propietario_input if propietario_input else "No indicado",
-            )
-          with c_inf2:
-            st.metric(
-                label="Profesional",
-                value=profesional_input if profesional_input else "No indicado",
-            )
-          st.markdown("")
-
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         calle_detectada = "Calculando..."
@@ -449,6 +403,7 @@ try:
         geom_principal = None
         orientacion_lm = "No determinada"
         tipo_ubicacion = "Entre Medianeras"
+        linderos_texto_acumulado = ""
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -565,12 +520,6 @@ try:
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
 
-                col_m1, col_m2 = st.columns(2)
-                with col_m1:
-                  st.metric(label="Orientación LM", value=orientacion_lm)
-                with col_m2:
-                  st.metric(label="Tipo de Lote", value=tipo_ubicacion)
-
               else:
                 st.info(
                     "No se encontró un polígono geométrico asociado al CCA"
@@ -584,6 +533,7 @@ try:
           # Listado de Lotes Linderos
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("Lotes Linderos")
+          lista_linderos_str = []
           if not linderos_vecinos.empty and geom_principal is not None:
             col_id = (
                 col_match
@@ -591,28 +541,22 @@ try:
                 else linderos_vecinos.columns[0]
             )
 
-            linderos_con_orientacion = []
             for _, row_lindero in linderos_vecinos.iterrows():
               cca_lindero = str(row_lindero.get(col_id, ""))
               num_letra_parcela = extraer_parcela_de_cca(cca_lindero)
               if num_letra_parcela and num_letra_parcela != "-":
                 geom_lindero = row_lindero.geometry
                 orientacion = obtener_orientacion(geom_principal, geom_lindero)
-                linderos_con_orientacion.append((orientacion, num_letra_parcela))
-
-            if linderos_con_orientacion:
-              for orientacion, parc in linderos_con_orientacion:
+                texto_lindero = (
+                    f"Parcela {num_letra_parcela} (Al {orientacion})"
+                )
+                lista_linderos_str.append(texto_lindero)
                 st.markdown(
                     f"<p style='margin: 0px 0px 4px 0px; font-size:12px;'"
-                    f" color:#555;'>• Parcela {parc} (Al {orientacion})</p>",
+                    f" color:#555;'>• {texto_lindero}</p>",
                     unsafe_allow_html=True,
                 )
-            else:
-              st.markdown(
-                  "<p style='font-size:12px; color:#666;'>No se pudieron extraer"
-                  " las parcelas linderas.</p>",
-                  unsafe_allow_html=True,
-              )
+            linderos_texto_acumulado = "; ".join(lista_linderos_str)
           else:
             st.markdown(
                 "<p style='font-size:12px; color:#666;'>No se detectaron lotes"
@@ -671,16 +615,8 @@ try:
           else:
             st.markdown("- N/D")
 
-          # ====================================================
-          # e. INFRAESTRUCTURA (Casillas para tachar / seleccionar)
-          # ====================================================
+          # Infraestructura
           st.subheader("e. Infraestructura y Servicios")
-          st.markdown(
-              "<p style='font-size:12px; color:#555; margin-bottom:4px;'>"
-              "Seleccione los servicios disponibles en el sector:</p>",
-              unsafe_allow_html=True,
-          )
-
           c_inf_col1, c_inf_col2, c_inf_col3 = st.columns(3)
           with c_inf_col1:
             chk_agua = st.checkbox("Agua corriente", value=True)
@@ -694,112 +630,35 @@ try:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-      # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES
-      # ====================================================
-      st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Análisis de asoleamiento, vientos predominantes y estrategias de"
-            " diseño bioclimático pasivo para el lote seleccionado."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("3. TECNOLOGIA CONSTRUCTIVA")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Sistemas constructivos aptos (Tradicional, Steel Framing, Wood"
-            " Framing, paneles SIP) y normativas de aplicación."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("4. INSTALACIONES")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Requerimientos y factibilidad de servicios sanitarios, eléctricos,"
-            " gas y desagües pluviales/cloacales."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("5. CLIMATIZACIÓN")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Estrategias de acondicionamiento térmico activo y pasivo,"
-            " envolvente y eficiencia energética."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("6. ENERGÍAS ALTERNATIVAS")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Incorporación de sistemas de energías renovables (paneles solares"
-            " fotovoltaicos, calentadores de agua solares, etc.)."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("7. PATOLOGÍAS")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Evaluación de riesgos ambientales, napas freáticas, humedad y"
-            " precauciones estructurales del sector."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("8. ILUMINACIÓN NATURAL")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Factores de iluminación natural, dimensiones mínimas de vanos y"
-            " factor de luz diurna según normativa."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("9. ACCESIBILIDAD")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.write(
-            "Criterios de accesibilidad universal, circulaciones horizontales y"
-            " verticales, y adecuación a normativas vigentes."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
-      st.header("10. RESULTADO DIAGNOSTICO")
-      with st.container():
-        st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
-        st.success(
-            "**Dictamen Urbanístico y Ambiental:** Parcela apta para desarrollo"
-            " según parámetros de FOS, FOT y altura máxima establecidos para"
-            " la zona."
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-
       # ----------------------------------------------------
       # BOTÓN DE DESCARGA DE WORD OFICIAL (.DOCX)
       # ----------------------------------------------------
       st.markdown("---")
       st.subheader("📥 Generación de Documento Oficial")
 
+      # Recopilamos ordenanzas municipales en un solo string para {{ORDM}}
+      ordenanza_str = (
+          " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
+      )
+
       datos_para_docx = {
-          "pda": pda_completo,
           "partido": partido_val,
+          "pda": pda_completo,
           "circunscripcion": circunscripcion_val,
           "seccion": seccion_val,
           "manzana": manzana_val,
           "parcela": parcela_val,
+          "inscripcion_dominio": (
+              inscripcion_input if inscripcion_input else "S/D"
+          ),
           "calle": calle_detectada,
-          "zona": str(row.get("designacio", "N/D")),
-          "fos": str(row.get("fos", "N/D")),
-          "fot": str(row.get("fota", "N/D")),
-          "altura": str(row.get("hmax", "N/D")),
           "area": str(row.get("descripcio", "N/D")),
-          "orientacion_lm": orientacion_lm,
-          "tipo_ubicacion": tipo_ubicacion,
+          "superficie": "S/D (según título)",
+          "linderos_texto": (
+              linderos_texto_acumulado
+              if linderos_texto_acumulado
+              else "Sin linderos registrados"
+          ),
           "propietario": (
               propietario_input if propietario_input else "No indicado"
           ),
@@ -814,6 +673,13 @@ try:
           ),
           "alumbrado": "[X] SÍ  [ ] NO" if chk_alumbrado else "[ ] SÍ  [X] NO",
           "pavimento": "[X] SÍ  [ ] NO" if chk_pavimento else "[ ] SÍ  [X] NO",
+          "ordenanza": ordenanza_str,
+          "zona": str(row.get("designacio", "N/D")),
+          "usos_admitidos": (
+              "Usos residenciales, comerciales y de servicios compatibles"
+              " según zonificación "
+              + str(row.get("designacio", ""))
+          ),
       }
 
       archivo_docx = generar_documento_word(datos_para_docx)
