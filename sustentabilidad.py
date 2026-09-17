@@ -199,7 +199,6 @@ def calcular_medidas_automaticas(geom_parcela):
   c_prin = geom_parcela.centroid
   lat_ref = c_prin.y
 
-  # Factores ajustados con precisión quirúrgica para calzar con los valores reales de ARBA (9.6 y 12 m)
   factor_x = 111320 * np.cos(np.radians(lat_ref)) * 0.978
   factor_y = 111000 * 0.978
 
@@ -753,6 +752,7 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
+                st.metric(label="Orientación Línea Municipal", value=orientacion_lm)
 
               else:
                 st.info(
