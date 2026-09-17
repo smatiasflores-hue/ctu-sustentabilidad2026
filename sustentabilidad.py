@@ -230,6 +230,14 @@ def generar_documento_word(contexto_datos):
       "{{AREA}}": str(contexto_datos.get("area", "")),
       "{{ORIENTACION_LM}}": str(contexto_datos.get("orientacion_lm", "")),
       "{{TIPO_UBICACION}}": str(contexto_datos.get("tipo_ubicacion", "")),
+      "{{PROPIETARIO}}": str(contexto_datos.get("propietario", "")),
+      "{{PROFESIONAL}}": str(contexto_datos.get("profesional", "")),
+      "{{AGUA}}": str(contexto_datos.get("agua", "")),
+      "{{GAS}}": str(contexto_datos.get("gas", "")),
+      "{{CLOACA}}": str(contexto_datos.get("cloaca", "")),
+      "{{ELECTRICIDAD}}": str(contexto_datos.get("electricidad", "")),
+      "{{ALUMBRADO}}": str(contexto_datos.get("alumbrado", "")),
+      "{{PAVIMENTO}}": str(contexto_datos.get("pavimento", "")),
   }
 
   for p in doc.paragraphs:
@@ -296,7 +304,7 @@ try:
     st.session_state.partida_buscada = ""
 
   # ----------------------------------------------------
-  # BARRA LATERAL: CONSULTA POR PARTIDA
+  # BARRA LATERAL: CONSULTA Y DATOS GENERALES
   # ----------------------------------------------------
   st.sidebar.header("🔍 Consulta por Partida")
   st.sidebar.markdown("**Estructura:** `055` + `[ 6 dígitos de Partida ]`")
@@ -310,6 +318,15 @@ try:
     )
 
   consultar = st.sidebar.button("Consultar Parcela")
+
+  st.sidebar.markdown("---")
+  st.sidebar.header("📋 Datos del Expediente")
+  propietario_input = st.sidebar.text_input(
+      "Propietario(s)", placeholder="Apellidos y Nombres"
+  )
+  profesional_input = st.sidebar.text_input(
+      "Profesional a cargo", placeholder="Arquitecto / Maestro Mayor de Obras"
+  )
 
   if consultar:
     if partida_input:
@@ -371,7 +388,7 @@ try:
           seccion_val = char
           break
       if seccion_val == "-" and len(cca_val) >= 7:
-        seccion_val = cca_val[6].strip("0") if cca_val[6] != "0" else "-"
+        seccion_val = cca_val[6].strip("0" if cca_val[6] != "0" else "-")
 
       try:
         segmento_mza = cca_val[28:35] if len(cca_val) >= 35 else cca_val
@@ -410,6 +427,21 @@ try:
       with st.container():
         st.markdown('<div class="contenido-sangria">', unsafe_allow_html=True)
 
+        # Muestra en pantalla los datos del Propietario y el Profesional si se ingresaron
+        if propietario_input or profesional_input:
+          c_inf1, c_inf2 = st.columns(2)
+          with c_inf1:
+            st.metric(
+                label="Propietario",
+                value=propietario_input if propietario_input else "No indicado",
+            )
+          with c_inf2:
+            st.metric(
+                label="Profesional",
+                value=profesional_input if profesional_input else "No indicado",
+            )
+          st.markdown("")
+
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         calle_detectada = "Calculando..."
@@ -440,14 +472,12 @@ try:
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
-                # Orientación de la Línea Municipal (LM)
                 minx, miny, maxx, maxy = geom_principal.bounds
                 if (centroid.x - minx) > (centroid.y - miny):
                   orientacion_lm = "Sudoeste (Frente a Calle)"
                 else:
                   orientacion_lm = "Noroeste (Frente a Calle)"
 
-                # Filtrado de linderos reales
                 try:
                   linderos_cercanos = gdf[
                       gdf.geometry.intersects(geom_principal)
@@ -462,7 +492,6 @@ try:
                     geom_principal, linderos_vecinos
                 )
 
-                # Creación del mapa base
                 m = folium.Map(
                     location=[lat, lon],
                     zoom_start=19,
@@ -472,7 +501,6 @@ try:
                     scrollWheelZoom=False,
                 )
 
-                # 1. Dibujar Linderos y sus etiquetas de texto (Estilo CartoARBA)
                 if not linderos_vecinos.empty:
                   if linderos_vecinos.crs != "EPSG:4326":
                     linderos_vecinos = linderos_vecinos.to_crs("EPSG:4326")
@@ -488,7 +516,6 @@ try:
                       tooltip="Lote Lindero",
                   ).add_to(m)
 
-                  # Añadir texto con el número/letra de parcela en cada lindero
                   col_id = (
                       col_match
                       if col_match in linderos_vecinos.columns
@@ -510,7 +537,6 @@ try:
                           ),
                       ).add_to(m)
 
-                # 2. Dibujar Parcela Principal y su etiqueta de texto central
                 folium.GeoJson(
                     gdf_parcela,
                     style_function=lambda x: {
@@ -525,7 +551,6 @@ try:
                     ),
                 ).add_to(m)
 
-                # Etiqueta de texto de la parcela principal sobre el mapa
                 folium.Marker(
                     location=[centroid.y, centroid.x],
                     icon=folium.DivIcon(
@@ -556,9 +581,7 @@ try:
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
-          # ====================================================
-          # SECCIÓN: Listado de Lotes Linderos con Orientación
-          # ====================================================
+          # Listado de Lotes Linderos
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("Lotes Linderos")
           if not linderos_vecinos.empty and geom_principal is not None:
@@ -647,6 +670,27 @@ try:
               st.markdown(f"- {item}")
           else:
             st.markdown("- N/D")
+
+          # ====================================================
+          # e. INFRAESTRUCTURA (Casillas para tachar / seleccionar)
+          # ====================================================
+          st.subheader("e. Infraestructura y Servicios")
+          st.markdown(
+              "<p style='font-size:12px; color:#555; margin-bottom:4px;'>"
+              "Seleccione los servicios disponibles en el sector:</p>",
+              unsafe_allow_html=True,
+          )
+
+          c_inf_col1, c_inf_col2, c_inf_col3 = st.columns(3)
+          with c_inf_col1:
+            chk_agua = st.checkbox("Agua corriente", value=True)
+            chk_gas = st.checkbox("Gas natural", value=True)
+          with c_inf_col2:
+            chk_cloaca = st.checkbox("Cloaca", value=True)
+            chk_electricidad = st.checkbox("Electricidad", value=True)
+          with c_inf_col3:
+            chk_alumbrado = st.checkbox("Alumbrado público", value=True)
+            chk_pavimento = st.checkbox("Pavimento", value=True)
 
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -756,6 +800,20 @@ try:
           "area": str(row.get("descripcio", "N/D")),
           "orientacion_lm": orientacion_lm,
           "tipo_ubicacion": tipo_ubicacion,
+          "propietario": (
+              propietario_input if propietario_input else "No indicado"
+          ),
+          "profesional": (
+              profesional_input if profesional_input else "No indicado"
+          ),
+          "agua": "[X] SÍ  [ ] NO" if chk_agua else "[ ] SÍ  [X] NO",
+          "gas": "[X] SÍ  [ ] NO" if chk_gas else "[ ] SÍ  [X] NO",
+          "cloaca": "[X] SÍ  [ ] NO" if chk_cloaca else "[ ] SÍ  [X] NO",
+          "electricidad": (
+              "[X] SÍ  [ ] NO" if chk_electricidad else "[ ] SÍ  [X] NO"
+          ),
+          "alumbrado": "[X] SÍ  [ ] NO" if chk_alumbrado else "[ ] SÍ  [X] NO",
+          "pavimento": "[X] SÍ  [ ] NO" if chk_pavimento else "[ ] SÍ  [X] NO",
       }
 
       archivo_docx = generar_documento_word(datos_para_docx)
