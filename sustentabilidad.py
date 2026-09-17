@@ -175,6 +175,32 @@ def extraer_parcela_de_cca(cca_str):
   return "-"
 
 
+# Función para calcular la orientación cardinal relativa entre dos geometrías
+def obtener_orientacion(geom_principal, geom_lindero):
+  c_prin = geom_principal.centroid
+  c_lind = geom_lindero.centroid
+  dx = c_lind.x - c_prin.x
+  dy = c_lind.y - c_prin.y
+
+  # Definimos umbrales para determinar Norte, Sur, Este, Oeste y combinaciones
+  dir_y = "Norte" if dy > 0 else "Sur"
+  dir_x = "Este" if dx > 0 else "Oeste"
+
+  # Si la diferencia en X o Y es muy pequeña, dejamos una sola dirección pura
+  if abs(dx) < 0.00001:
+    return "Norte" if dy > 0 else "Sur"
+  if abs(dy) < 0.00001:
+    return "Este" if dx > 0 else "Oeste"
+
+  # Combinaciones diagonales si están orientados en esquina
+  if abs(dy) > abs(dx) * 2:
+    return "Norte" if dy > 0 else "Sur"
+  elif abs(dx) > abs(dy) * 2:
+    return "Este" if dx > 0 else "Oeste"
+  else:
+    return f"{dir_y}-{dir_x}"
+
+
 # Función para generar el documento Word basado en una plantilla (.docx)
 def generar_documento_word(contexto_datos):
   try:
@@ -380,6 +406,7 @@ try:
 
         calle_detectada = "Calculando..."
         linderos_vecinos = gpd.GeoDataFrame()
+        geom_principal = None
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -397,15 +424,14 @@ try:
                 if gdf_parcela.crs != "EPSG:4326":
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
-                centroid = gdf_parcela.unary_union.centroid
+                geom_principal = gdf_parcela.geometry.iloc[0]
+                centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
-                # FILTRADO ESTRICTO DE LINDEROS REALES (TOCAN O INTERSECTAN EL LÍMITE)
+                # FILTRADO ESTRICTO DE LINDEROS REALES
                 try:
-                  geom_principal = gdf_parcela.geometry.iloc[0]
-                  # Filtramos geometrías que toquen físicamente el polígono principal
                   linderos_cercanos = gdf[
                       gdf.geometry.intersects(geom_principal)
                   ]
@@ -465,31 +491,32 @@ try:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
           # ====================================================
-          # SECCIÓN: Listado exclusivo de Lotes Linderos Reales
+          # SECCIÓN: Listado de Lotes Linderos con Orientación Cardinal
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("Lotes Linderos")
-          if not linderos_vecinos.empty:
+          if not linderos_vecinos.empty and geom_principal is not None:
             col_id = (
                 col_match
                 if col_match in linderos_vecinos.columns
                 else linderos_vecinos.columns[0]
             )
 
-            linderos_procesados = []
+            linderos_con_orientacion = []
             for _, row_lindero in linderos_vecinos.iterrows():
               cca_lindero = str(row_lindero.get(col_id, ""))
               num_letra_parcela = extraer_parcela_de_cca(cca_lindero)
               if num_letra_parcela and num_letra_parcela != "-":
-                linderos_procesados.append(num_letra_parcela)
+                geom_lindero = row_lindero.geometry
+                orientacion = obtener_orientacion(geom_principal, geom_lindero)
+                linderos_con_orientacion.append((orientacion, num_letra_parcela))
 
-            linderos_procesados = sorted(list(set(linderos_procesados)))
-
-            if linderos_procesados:
-              for idx, parc in enumerate(linderos_procesados, 1):
+            if linderos_con_orientacion:
+              # Ordenamos visualmente por orientación si se desea
+              for orientacion, parc in linderos_con_orientacion:
                 st.markdown(
                     f"<p style='margin: 0px 0px 4px 0px; font-size:12px;'"
-                    f" color:#555;'>• Parcela {parc}</p>",
+                    f" color:#555;'>• Parcela {parc} (Al {orientacion})</p>",
                     unsafe_allow_html=True,
                 )
             else:
