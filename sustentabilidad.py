@@ -188,7 +188,7 @@ def contar_lados_parcela(geom_parcela):
   return 4
 
 
-# Función 1: Croquis de Ubicación (Líneas negras con número de parcela)
+# Función 1: Croquis de Ubicación centrado y con zoom en el lote principal
 def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
@@ -242,6 +242,13 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
         weight="bold",
     )
 
+    # Zoom y centrado estricto basado en los límites de la parcela principal (+ margen de aire)
+    minx, miny, maxx, maxy = gdf_parcela.total_bounds
+    margen_x = (maxx - minx) * 0.8 if maxx != minx else 0.0001
+    margen_y = (maxy - miny) * 0.8 if maxy != miny else 0.0001
+    ax.set_xlim(minx - margen_x, maxx + margen_x)
+    ax.set_ylim(miny - margen_y, maxy + margen_y)
+
   plt.tight_layout()
   img_buffer = BytesIO()
   plt.savefig(
@@ -252,7 +259,7 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
   return img_buffer
 
 
-# Función 2: Mapa de Zonificación en radio de 60 metros con etiquetas de ZONA (designacio)
+# Función 2: Mapa de Zonificación centrado y con zoom en el lote principal
 def generar_imagen_zonificacion(
     gdf_parcela, gdf_completo_geo, df_csv_datos, cca_principal
 ):
@@ -263,10 +270,9 @@ def generar_imagen_zonificacion(
 
   if not gdf_parcela.empty:
     geom_prin = gdf_parcela.geometry.iloc[0]
-    # Buffer aproximado de 60 metros (en coordenadas WGS84 equivalen aprox a 0.00055 grados)
-    buffer_zona = geom_prin.buffer(0.00055)
+    # Buffer de radio cercano para capturar el entorno inmediato
+    buffer_zona = geom_prin.buffer(0.0006)
 
-    # Filtrar lotes dentro del radio de 60 metros
     lotes_cercanos = gdf_completo_geo[
         gdf_completo_geo.geometry.intersects(buffer_zona)
     ]
@@ -280,7 +286,6 @@ def generar_imagen_zonificacion(
           linestyle="-",
       )
 
-      # Identificar columna de unión en el GeoJSON
       col_id_geo = None
       for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
         if c in lotes_cercanos.columns:
@@ -291,14 +296,12 @@ def generar_imagen_zonificacion(
         cca_lote = (
             str(row_lote.get(col_id_geo, "")) if col_id_geo else ""
         )
-        # Buscar la zona (designacio) correspondiente en el CSV de datos
         match_csv = df_csv_datos[df_csv_datos["CCA"].astype(str) == cca_lote]
         zona_txt = "N/D"
         if not match_csv.empty:
           zona_txt = str(match_csv.iloc[0].get("designacio", "N/D"))
 
         c_lote = row_lote.geometry.centroid
-        # Acortamos texto de zona si es muy largo para que entre bien en el plano
         zona_corto = (
             zona_txt[:10] + "..." if len(zona_txt) > 10 else zona_txt
         )
@@ -313,10 +316,16 @@ def generar_imagen_zonificacion(
             weight="bold",
         )
 
-    # Resaltar el lote principal con línea negra más gruesa
     gdf_parcela.plot(
         ax=ax, facecolor="none", edgecolor="#000000", linewidth=2.0
     )
+
+    # Zoom y centrado estricto en el lote principal para la hoja de zonificación
+    minx, miny, maxx, maxy = gdf_parcela.total_bounds
+    margen_x = (maxx - minx) * 1.2 if maxx != minx else 0.0001
+    margen_y = (maxy - miny) * 1.2 if maxy != miny else 0.0001
+    ax.set_xlim(minx - margen_x, maxx + margen_x)
+    ax.set_ylim(miny - margen_y, maxy + margen_y)
 
   plt.tight_layout()
   img_buffer = BytesIO()
@@ -807,7 +816,7 @@ try:
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
 
-      # Generación de imágenes para {{MAPO}} y {{MAZO}}
+      # Generación de imágenes centradas y con zoom para {{MAPO}} y {{MAZO}}
       buffer_imagen_mapa = None
       buffer_imagen_zonificacion = None
       try:
