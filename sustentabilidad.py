@@ -68,20 +68,17 @@ st.markdown(
 )
 
 
-# Función inteligente para capturar múltiples calles cercanas (ideal para esquinas)
+# Función corregida y unificada para capturar múltiples calles cercanas (ideal para esquinas)
 @st.cache_data(ttl=86400, show_spinner=False)
 def obtener_calles_cercanas_lote(geom_parcela):
   calles_encontradas = set()
   try:
     headers = {"User-Agent": "CertificadoTecnicoUrbanistico/2.0"}
-
-    # 1. Obtener centroide y vértices externos del lote
     c = geom_parcela.centroid
     puntos_a_consultar = [(c.y, c.x)]
 
     try:
       coords = list(geom_parcela.exterior.coords)
-      # Tomamos algunos vértices clave para buscar calles circundantes (esquinas/frentes)
       for pt in coords[:: max(1, len(coords) // 4)]:
         puntos_a_consultar.append((pt[1], pt[0]))
     except Exception:
@@ -684,7 +681,7 @@ try:
                 lat, lon = centroid.y, centroid.x
 
                 # Capturamos todas las calles cercanas (ideal para esquinas)
-                calles_detectadas = obtener_calles_cercana_lote(geom_principal)
+                calles_detectadas = obtener_calles_cercanas_lote(geom_principal)
 
                 minx, miny, maxx, maxy = geom_principal.bounds
                 if (centroid.x - minx) > (centroid.y - miny):
