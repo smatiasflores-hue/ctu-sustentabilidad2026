@@ -104,6 +104,28 @@ st.markdown(
 )
 
 
+# Función original de geolocalización restaurada para autocompletar la calle
+@st.cache_data(ttl=3600)
+def obtener_calle_cercana(lat, lon):
+  try:
+    url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}"
+    headers = {"User-Agent": "CertificadoTecnicoUrbanistico/1.0"}
+    response = requests.get(url, headers=headers, timeout=3)
+    if response.status_code == 200:
+      data = response.json()
+      address = data.get("address", {})
+      calle = (
+          address.get("road")
+          or address.get("pedestrian")
+          or address.get("suburb")
+          or ""
+      )
+      return calle
+  except Exception:
+    pass
+  return ""
+
+
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
 def extraer_parcela_de_cca(cca_str):
   try:
@@ -167,62 +189,6 @@ def obtener_vertices_parcela(geom_parcela):
     return coords
   except Exception:
     return []
-
-
-# Lógica geométrica avanzada de frente con control de pasillos/corazones de manzana
-def analizar_frente_parcela(geom_parcela):
-  vertices = obtener_vertices_parcela(geom_parcela)
-  if not vertices:
-    return "Frente Principal", "Norte"
-
-  c_prin = geom_parcela.centroid
-  factor_x = 111320 * np.cos(np.radians(c_prin.y)) * 0.978
-  factor_y = 111000 * 0.978
-
-  num_v = len(vertices)
-  candidatos_frente = []
-
-  for i in range(num_v):
-    p1 = vertices[i]
-    p2 = vertices[(i + 1) % num_v]
-    dx = (p2[0] - p1[0]) * factor_x
-    dy = (p2[1] - p1[1]) * factor_y
-    longitud = np.hypot(dx, dy)
-
-    if longitud >= 3.0 and longitud <= 40.0:
-      candidatos_frente.append((longitud, i, p1, p2))
-
-  if not candidatos_frente:
-    idx_frente = 0
-    longitud_frente = 10.0
-    p1 = vertices[0]
-    p2 = vertices[1]
-  else:
-    candidatos_frente.sort(key=lambda x: x[0], reverse=True)
-    if (
-        len(candidatos_frente) > 1
-        and candidatos_frente[0][0] > 2.5 * candidatos_frente[-1][0]
-    ):
-      longitud_frente, idx_frente, p1, p2 = candidatos_frente[1]
-    else:
-      longitud_frente, idx_frente, p1, p2 = candidatos_frente[0]
-
-  pmx = (p1[0] + p2[0]) / 2.0
-  pmy = (p1[1] + p2[1]) / 2.0
-
-  d_cent_y = pmy - c_prin.y
-  d_cent_x = pmx - c_prin.x
-
-  if abs(d_cent_y) > abs(d_cent_x):
-    orientacion = (
-        "Norte (Frente a Calle)" if d_cent_y > 0 else "Sur (Frente a Calle)"
-    )
-  else:
-    orientacion = (
-        "Este (Frente a Calle)" if d_cent_x > 0 else "Oeste (Frente a Calle)"
-    )
-
-  return f"Lado {idx_frente+1} ({round(longitud_frente,1)}m)", orientacion
 
 
 # Función para calcular las medidas automáticas con el factor de calibración ultrafino
@@ -673,7 +639,7 @@ try:
         linderos_texto_acumulado = ""
         col_match = None
         medidas_auto = []
-        info_frente = ""
+        calle_detectada = ""
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -692,12 +658,18 @@ try:
 
                 geom_principal = gdf_parcela.geometry.iloc[0]
                 medidas_auto = calcular_medidas_automaticas(geom_principal)
-                info_frente, orientacion_lm = analizar_frente_parcela(
-                    geom_principal
-                )
 
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
+
+                # Geolocalización automática de la calle
+                calle_detectada = obtener_calle_cercana(lat, lon)
+
+                minx, miny, maxx, maxy = geom_principal.bounds
+                if (centroid.x - minx) > (centroid.y - miny):
+                  orientacion_lm = "Sudoeste (Frente a Calle)"
+                else:
+                  orientacion_lm = "Noroeste (Frente a Calle)"
 
                 try:
                   linderos_cercanos = gdf[
@@ -780,8 +752,7 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(
-                    label="Orientación Línea Municipal (Frente)",
-                    value=orientacion_lm,
+                    label="Orientación Línea Municipal", value=orientacion_lm
                 )
 
               else:
@@ -837,16 +808,16 @@ try:
 
           st.markdown("")
 
-          # Campo editable para la calle (100% control profesional)
+          # Campo de calle autocompletado por geolocalización y 100% editable
           st.subheader("📍 Calle de Referencia (Frente)")
-          sugerencia_calle = (
-              f"Frente hacia {orientacion_lm.split(' ')[0]}"
-              if orientacion_lm != "No determinada"
-              else "Calle 26"
+          valor_inicial_calle = (
+              calle_detectada
+              if calle_detectada
+              else "Calle a indicar / Autocompletada"
           )
           calle_input = st.text_input(
               "Indique la calle del frente del inmueble:",
-              value=sugerencia_calle,
+              value=valor_inicial_calle,
               key="calle_editable_input",
           )
 
@@ -892,9 +863,8 @@ try:
           st.subheader("📏 Ajuste y Verificación de Medidas por Lado")
           st.markdown(
               "<p style='font-size:12px; color:#555;'>El sistema"
-              " autocompletó las medidas calculadas. Frente detectado:"
-              f" <b>{info_frente}</b>. Puede modificarlas si observa alguna"
-              " variación:</p>",
+              " autocompletó las medidas calculadas con calibración métrica."
+              " Puede modificarlas si observa alguna variación:</p>",
               unsafe_allow_html=True,
           )
 
