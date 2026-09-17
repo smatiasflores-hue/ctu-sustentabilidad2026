@@ -118,12 +118,12 @@ def obtener_calle_cercana(lat, lon):
           address.get("road")
           or address.get("pedestrian")
           or address.get("suburb")
-          or "Calle no identificada"
+          or None
       )
       return calle
   except Exception:
     pass
-  return "No disponible"
+  return None
 
 
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
@@ -261,7 +261,6 @@ def generar_imagen_croquis_con_medidas(
         str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
     )
 
-    # Número/letra de parcela en círculo negro limpio
     ax.text(
         c_prin.x,
         c_prin.y,
@@ -632,7 +631,7 @@ try:
 
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
-        calle_detectada = "Calculando..."
+        calle_detectada = "No disponible"
         linderos_vecinos = gpd.GeoDataFrame()
         gdf_parcela = gpd.GeoDataFrame()
         geom_principal = None
@@ -663,7 +662,10 @@ try:
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
-                calle_detectada = obtener_calle_cercana(lat, lon)
+                # Llamada recuperada para obtener la calle cercana correctamente
+                calle_resultado = obtener_calle_cercana(lat, lon)
+                if calle_resultado:
+                  calle_detectada = calle_resultado
 
                 minx, miny, maxx, maxy = geom_principal.bounds
                 if (centroid.x - minx) > (centroid.y - miny):
@@ -752,7 +754,9 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
-                st.metric(label="Orientación Línea Municipal", value=orientacion_lm)
+                st.metric(
+                    label="Orientación Línea Municipal", value=orientacion_lm
+                )
 
               else:
                 st.info(
