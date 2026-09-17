@@ -191,7 +191,7 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función avanzada: Croquis automático con círculo en la parcela y factor multiplicador métrico
+# Función avanzada: Croquis automático con calibración independiente en X e Y para medidas exactas
 def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
@@ -254,13 +254,14 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         ),
     )
 
-    # Cálculo automático de medidas con multiplicador de calibración para ajuste exacto a metros
+    # Factores de corrección separados para X (Longitud) e Y (Latitud) para corregir la deformación esférica
+    lat_ref = c_prin.y
+    factor_x = 111320 * np.cos(np.radians(lat_ref))
+    factor_y = 111000
+
     vertices = obtener_vertices_parcela(geom_prin)
     if vertices:
       num_v = len(vertices)
-      # Multiplicador de ajuste métrico para calibrar con la cartografía de ARBA en La Plata
-      FACTOR_CALIBRACION = 1.05
-
       for i in range(num_v):
         p1 = vertices[i]
         p2 = vertices[(i + 1) % num_v]
@@ -268,10 +269,9 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         mx = (p1[0] + p2[0]) / 2.0
         my = (p1[1] + p2[1]) / 2.0
 
-        dist_grados = np.hypot(p2[0] - p1[0], p2[1] - p1[1])
-        dist_metros = round(
-            dist_grados * 111320 * np.cos(np.radians(my)) * FACTOR_CALIBRACION, 1
-        )
+        dx_m = (p2[0] - p1[0]) * factor_x
+        dy_m = (p2[1] - p1[1]) * factor_y
+        dist_metros = round(np.hypot(dx_m, dy_m), 1)
 
         ax.text(
             mx,
@@ -738,7 +738,7 @@ try:
                     f" `{cca_val}`."
                 )
             else:
-              st.warning("The archivo `lotes.geojson` no posee columna de enlace.")
+              st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
@@ -834,8 +834,8 @@ try:
               st.image(
                   img_prev,
                   caption=(
-                      "Medidas automáticas calculadas con factor de calibración"
-                      " y parcela en círculo"
+                      "Medidas calculadas con calibración independiente en X e"
+                      " Y"
                   ),
                   width=350,
               )
