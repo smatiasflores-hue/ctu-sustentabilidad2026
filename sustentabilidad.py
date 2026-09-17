@@ -4,7 +4,9 @@ from docx import Document
 from docx.shared import Inches
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+requests = requests
 import requests
 import streamlit as st
 from streamlit_folium import st_folium
@@ -173,23 +175,28 @@ def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
     return "Entre Medianeras"
 
 
-# Función para contar las líneas/lados (aristas) del polígono principal
-def contar_lados_parcela(geom_parcela):
+# Función para extraer y ordenar los vértices de la parcela principal
+def obtener_vertices_parcela(geom_parcela):
   try:
     geom_tipo = geom_parcela.geom_type
     if geom_tipo == "Polygon":
       coords = list(geom_parcela.exterior.coords)
-      return len(coords) - 1
     elif geom_tipo == "MultiPolygon":
       coords = list(geom_parcela.geoms[0].exterior.coords)
-      return len(coords) - 1
+    else:
+      return []
+    # Eliminamos el último punto duplicado que cierra el polígono
+    if coords[0] == coords[-1]:
+      coords = coords[:-1]
+    return coords
   except Exception:
-    pass
-  return 4
+    return []
 
 
-# Función 1: Croquis de Ubicación con mayor zoom centrado en el lote
-def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
+# Función avanzada: Genera el croquis con las medidas escritas en cada lado correspondiente
+def generar_imagen_croquis_con_medidas(
+    gdf_parcela, linderos_vecinos, medidas_lados
+):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
   ax.set_xticks([])
@@ -225,9 +232,10 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
 
   if not gdf_parcela.empty:
     gdf_parcela.plot(
-        ax=ax, facecolor="none", edgecolor="#000000", linewidth=1.5
+        ax=ax, facecolor="none", edgecolor="#000000", linewidth=1.8
     )
-    c_prin = gdf_parcela.geometry.iloc[0].centroid
+    geom_prin = gdf_parcela.geometry.iloc[0]
+    c_prin = geom_prin.centroid
     parc_prin = extraer_parcela_de_cca(
         str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
     )
@@ -242,7 +250,38 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
         weight="bold",
     )
 
-    # Margen reducido (0.25) para lograr un zoom mayor y más cercano al lote
+    # Dibujar las medidas ingresadas en el punto medio de cada segmento/lado
+    vertices = obtener_vertices_parcela(geom_prin)
+    if vertices and len(medidas_lados) == len(vertices):
+      num_v = len(vertices)
+      for i in range(num_v):
+        p1 = vertices[i]
+        p2 = vertices[(i + 1) % num_v]  # Siguiente vértice (cierra el ciclo)
+
+        # Punto medio del segmento
+        mx = (p1[0] + p2[0]) / 2.0
+        my = (p1[1] + p2[1]) / 2.0
+
+        medida_texto = medidas_lados[i]
+        if medida_texto and medida_texto.strip() != "":
+          ax.text(
+              mx,
+              my,
+              medida_texto.strip(),
+              fontsize=8,
+              ha="center",
+              va="center",
+              color="#000000",
+              weight="bold",
+              bbox=dict(
+                  boxstyle="round,pad=0.1",
+                  facecolor="white",
+                  edgecolor="none",
+                  alpha=0.8,
+              ),
+          )
+
+    # Zoom y centrado estricto con margen reducido
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
     margen_x = (maxx - minx) * 0.25 if maxx != minx else 0.0001
     margen_y = (maxy - miny) * 0.25 if maxy != miny else 0.0001
@@ -259,7 +298,7 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
   return img_buffer
 
 
-# Función 2: Mapa de Zonificación robusto (Lote + Linderos etiquetados con ZONA)
+# Función de Zonificación
 def generar_imagen_zonificacion(
     gdf_parcela, linderos_vecinos, df_csv_datos, col_match
 ):
@@ -322,7 +361,6 @@ def generar_imagen_zonificacion(
         weight="bold",
     )
 
-    # Zoom cercano enfocado en el lote principal
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
     margen_x = (maxx - minx) * 0.4 if maxx != minx else 0.0001
     margen_y = (maxy - miny) * 0.4 if maxy != miny else 0.0001
@@ -558,6 +596,23 @@ try:
           else [str(row.get("observacio_2", "N/D"))]
       )
 
+      # Obtención previa de geometría y lados para construir los inputs dinámicos
+      try:
+        gdf_temp = cargar_geojson()
+        col_m_temp = None
+        for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
+          if c in gdf_temp.columns:
+            col_m_temp = c
+            break
+        gdf_p_temp = gdf_temp[gdf_temp[col_m_temp].astype(str) == cca_val]
+        geom_p_temp = gdf_p_temp.geometry.iloc[0] if not gdf_p_temp.empty else None
+        vertices_temp = (
+            obtener_vertices_parcela(geom_p_temp) if geom_p_temp else []
+        )
+        num_lados_detectados = len(vertices_temp) if vertices_temp else 4
+      except Exception:
+        num_lados_detectados = 4
+
       # ====================================================
       # 1. DATOS
       # ====================================================
@@ -575,7 +630,6 @@ try:
         orientacion_lm = "No determinada"
         tipo_ubicacion = "Entre Medianeras"
         linderos_texto_acumulado = ""
-        cantidad_lados = 4
         col_match = None
 
         with col_mapa:
@@ -594,8 +648,6 @@ try:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
                 geom_principal = gdf_parcela.geometry.iloc[0]
-                cantidad_lados = contar_lados_parcela(geom_principal)
-
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
@@ -688,10 +740,6 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
-                st.info(
-                    f"📐 Análisis Geométrico: El lote posee **{cantidad_lados}"
-                    " lados** identificados."
-                )
 
               else:
                 st.info(
@@ -782,8 +830,55 @@ try:
           else:
             st.markdown("- N/D")
 
+          # ====================================================
+          # INGRESO DINÁMICO DE MEDIDAS POR LADO (ARISTAS)
+          # ====================================================
+          st.subheader("📏 Carga de Medidas por Lado (Aristas)")
+          st.markdown(
+              f"<p style='font-size:12px; color:#555;'>Se detectaron"
+              f" <b>{num_lados_detectados} lados</b> en el polígono. Ingrese"
+              " las medidas para que aparezcan impresas:</p>",
+              unsafe_allow_html=True,
+          )
+
+          medidas_ingresadas = []
+          cols_medidas = st.columns(
+              min(num_lados_detectados, 4)
+          )  # Hasta 4 columnas por fila
+          for i in range(num_lados_detectados):
+            col_idx = i % 4
+            with cols_medidas[col_idx]:
+              val_m = st.text_input(
+                  f"Lado {i+1}",
+                  value="",
+                  placeholder=f"Ej: {10+i*2}",
+                  key=f"lado_{i}",
+              )
+              medidas_ingresadas.append(val_m)
+
+          # ====================================================
+          # VISTA PREVIA DE CONFIRMACIÓN (Segundo Mapa en Pantalla)
+          # ====================================================
+          st.markdown("<br>", unsafe_allow_html=True)
+          st.subheader("👁️ Vista Previa de Control (Croquis con Medidas)")
+          try:
+            if not gdf_parcela.empty:
+              img_prev = generar_imagen_croquis_con_medidas(
+                  gdf_parcela, linderos_vecinos, medidas_ingresadas
+              )
+              st.image(
+                  img_prev,
+                  caption=(
+                      "Vista previa exacta del croquis que se imprimirá en el"
+                      " Word"
+                  ),
+                  width=350,
+              )
+          except Exception as prev_err:
+            st.info(f"No se pudo generar la vista previa: {prev_err}")
+
           # Infraestructura
-          st.subheader("e. Infraestructura y Servicios")
+          st.subheader("f. Infraestructura y Servicios")
           c_inf_col1, c_inf_col2, c_inf_col3 = st.columns(3)
           with c_inf_col1:
             chk_agua = st.checkbox("Agua corriente", value=True)
@@ -807,13 +902,13 @@ try:
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
 
-      # Generación de imágenes con zoom óptimo y robustas para {{MAPO}} y {{MAZO}}
+      # Generación final de imágenes para el documento Word
       buffer_imagen_mapa = None
       buffer_imagen_zonificacion = None
       try:
         if not gdf_parcela.empty:
-          buffer_imagen_mapa = generar_imagen_croquis_lineas(
-              gdf_parcela, linderos_vecinos
+          buffer_imagen_mapa = generar_imagen_croquis_con_medidas(
+              gdf_parcela, linderos_vecinos, medidas_ingresadas
           )
           buffer_imagen_zonificacion = generar_imagen_zonificacion(
               gdf_parcela, linderos_vecinos, df, col_match
