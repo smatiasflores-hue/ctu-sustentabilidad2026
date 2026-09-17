@@ -68,7 +68,7 @@ st.markdown(
 )
 
 
-# Función para capturar múltiples calles cercanas (solucionado el hash con _geom_parcela)
+# Función para capturar múltiples calles cercanas (ideal para esquinas)
 @st.cache_data(ttl=86400, show_spinner=False)
 def obtener_calles_cercanas_lote(_geom_parcela):
   calles_encontradas = set()
@@ -173,7 +173,46 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función para calcular las medidas automáticas con el factor de calibración métrica ultrafino
+# Función inteligente para determinar la Línea Municipal en base al lado más cercano al frente / calle
+def determinar_linea_municipal_por_frente(geom_parcela, calle_seleccionada):
+  vertices = obtener_vertices_parcela(geom_parcela)
+  if not vertices:
+    return "Frente Principal (No determinada)"
+
+  c_prin = geom_parcela.centroid
+  # Analizamos cada lado (arista) del polígono para ver cuál está más hacia el Norte, Sur, Este u Oeste
+  # Dependiendo del nombre de la calle o la posición geográfica del segmento respecto al centroide
+  mejores_lados = []
+  num_v = len(vertices)
+
+  for i in range(num_v):
+    p1 = vertices[i]
+    p2 = vertices[(i + 1) % num_v]
+    mx = (p1[0] + p2[0]) / 2.0
+    my = (p1[1] + p2[1]) / 2.0
+
+    dx = mx - c_prin.x
+    dy = my - c_prin.y
+
+    # Determinamos la dirección predominante de este segmento respecto al centro del lote
+    if abs(dy) >= abs(dx):
+      cardinal = "Norte" if dy > 0 else "Sur"
+    else:
+      cardinal = "Este" if dx > 0 else "Oeste"
+
+    mejores_lados.append((i + 1, cardinal, np.hypot(dx, dy)))
+
+  # Ordenamos por distancia al centroide (los lados exteriores están más lejos del centro que los medianeros internos)
+  mejores_lados.sort(key=lambda x: x[2], reverse=True)
+
+  if mejores_lados:
+    num_lado, orientacion_cardinal, _ = mejores_lados[0]
+    return f"{orientacion_cardinal} (Frente a {calle_seleccionada})"
+
+  return "Frente Principal"
+
+
+# Función para calcular las medidas automáticas con calibración métrica
 def calcular_medidas_automaticas(geom_parcela):
   vertices = obtener_vertices_parcela(geom_parcela)
   if not vertices:
@@ -659,6 +698,12 @@ try:
         col_match = None
         medidas_auto = []
 
+        with col_datos:
+          st.subheader("a. Datos Catastrales")
+
+          # PRIMERO definimos el selector de calle para que su valor esté disponible al calcular la LM
+          st.subheader("📍 Calle de Referencia (Frente del Inmueble)")
+
         with col_mapa:
           st.subheader("Ubicación del Lote")
           try:
@@ -680,14 +725,7 @@ try:
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
-                # Capturamos todas las calles cercanas (ideal para esquinas)
                 calles_detectadas = obtener_calles_cercanas_lote(geom_principal)
-
-                minx, miny, maxx, maxy = geom_principal.bounds
-                if (centroid.x - minx) > (centroid.y - miny):
-                  orientacion_lm = "Sudoeste (Frente a Calle)"
-                else:
-                  orientacion_lm = "Noroeste (Frente a Calle)"
 
                 try:
                   indices_vecinos = gdf.sindex.query(
@@ -775,12 +813,6 @@ try:
                 ).add_to(m)
 
                 st_folium(m, width=320, height=280)
-                st.metric(
-                    label="Orientación Línea Municipal", value=orientacion_lm
-                )
-                st.metric(
-                    label="Calles Detectadas", value=", ".join(calles_detectadas)
-                )
 
               else:
                 st.info(
@@ -821,11 +853,6 @@ try:
             )
 
         with col_datos:
-          st.subheader("a. Datos Catastrales")
-
-          # Selector de calles cercanas / esquinas con autocompletado en cascada
-          st.subheader("📍 Calle de Referencia (Frente del Inmueble)")
-
           opciones_selector = list(calles_detectadas) + [
               "Escribir manualmente..."
           ]
@@ -845,6 +872,22 @@ try:
                 value=calle_seleccionada_combo,
                 key="calle_editable_input",
             )
+
+          # Determinamos la Línea Municipal en base a la geometría y la calle seleccionada
+          if geom_principal is not None:
+            orientacion_lm = determinar_linea_municipal_por_frente(
+                geom_principal, calle_input
+            )
+          else:
+            orientacion_lm = "No determinada"
+
+          st.metric(label="Orientación Línea Municipal", value=orientacion_lm)
+          st.metric(
+              label="Calles Detectadas en la Zona",
+              value=", ".join(calles_detectadas)
+              if calles_detectadas
+              else "Ninguna",
+          )
 
           c_cat1, c_cat2, c_cat3 = st.columns(3)
           with c_cat1:
