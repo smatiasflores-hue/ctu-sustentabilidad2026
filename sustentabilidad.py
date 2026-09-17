@@ -174,12 +174,11 @@ def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
 # Función para generar el documento Word basado en la plantilla exacta
 def generar_documento_word(contexto_datos):
   try:
-    # Carga estricta de la plantilla Word en la misma carpeta
-    doc = Document("plantilla_certificado.docx")
+    # Carga estricta usando tu nombre de archivo exacto
+    doc = Document("informe_sustentabilidad.docx")
   except Exception as e:
-    # Mensaje de respaldo en caso de que no encuentre el archivo en el directorio local
     doc = Document()
-    doc.add_heading("Error: No se encontró plantilla_certificado.docx", 0)
+    doc.add_heading("Error: No se encontró informe_sustentabilidad.docx", 0)
     doc.add_paragraph(f"Detalle técnico: {e}")
 
   reemplazos = {
