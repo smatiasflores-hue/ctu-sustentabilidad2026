@@ -191,8 +191,32 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función avanzada: Croquis automático con calibración independiente en X e Y para medidas exactas
-def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
+# Función para calcular previamente las medidas automáticas en metros con calibrador X/Y
+def calcular_medidas_automaticas(geom_parcela):
+  vertices = obtener_vertices_parcela(geom_parcela)
+  if not vertices:
+    return []
+  c_prin = geom_parcela.centroid
+  lat_ref = c_prin.y
+  factor_x = 111320 * np.cos(np.radians(lat_ref))
+  factor_y = 111000
+
+  medidas = []
+  num_v = len(vertices)
+  for i in range(num_v):
+    p1 = vertices[i]
+    p2 = vertices[(i + 1) % num_v]
+    dx_m = (p2[0] - p1[0]) * factor_x
+    dy_m = (p2[1] - p1[1]) * factor_y
+    dist_metros = round(np.hypot(dx_m, dy_m), 1)
+    medidas.append(str(dist_metros))
+  return medidas
+
+
+# Función avanzada: Croquis con medidas editables y círculo en la parcela
+def generar_imagen_croquis_con_medidas(
+    gdf_parcela, linderos_vecinos, medidas_lados
+):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
   ax.set_xticks([])
@@ -236,7 +260,7 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
     )
 
-    # Número/letra de parcela dentro de un círculo negro limpio (Estilo CartoARBA)
+    # Número/letra de parcela en círculo negro limpio
     ax.text(
         c_prin.x,
         c_prin.y,
@@ -254,13 +278,8 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         ),
     )
 
-    # Factores de corrección separados para X (Longitud) e Y (Latitud) para corregir la deformación esférica
-    lat_ref = c_prin.y
-    factor_x = 111320 * np.cos(np.radians(lat_ref))
-    factor_y = 111000
-
     vertices = obtener_vertices_parcela(geom_prin)
-    if vertices:
+    if vertices and len(medidas_lados) == len(vertices):
       num_v = len(vertices)
       for i in range(num_v):
         p1 = vertices[i]
@@ -269,26 +288,24 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         mx = (p1[0] + p2[0]) / 2.0
         my = (p1[1] + p2[1]) / 2.0
 
-        dx_m = (p2[0] - p1[0]) * factor_x
-        dy_m = (p2[1] - p1[1]) * factor_y
-        dist_metros = round(np.hypot(dx_m, dy_m), 1)
-
-        ax.text(
-            mx,
-            my,
-            f"{dist_metros}",
-            fontsize=7,
-            ha="center",
-            va="center",
-            color="#111111",
-            weight="bold",
-            bbox=dict(
-                boxstyle="round,pad=0.1",
-                facecolor="white",
-                edgecolor="none",
-                alpha=0.8,
-            ),
-        )
+        medida_texto = medidas_lados[i]
+        if medida_texto and medida_texto.strip() != "":
+          ax.text(
+              mx,
+              my,
+              medida_texto.strip(),
+              fontsize=8,
+              ha="center",
+              va="center",
+              color="#000000",
+              weight="bold",
+              bbox=dict(
+                  boxstyle="round,pad=0.1",
+                  facecolor="white",
+                  edgecolor="none",
+                  alpha=0.8,
+              ),
+          )
 
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
     margen_x = (maxx - minx) * 0.25 if maxx != minx else 0.0001
@@ -622,6 +639,7 @@ try:
         tipo_ubicacion = "Entre Medianeras"
         linderos_texto_acumulado = ""
         col_match = None
+        medidas_auto = []
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -639,6 +657,8 @@ try:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
                 geom_principal = gdf_parcela.geometry.iloc[0]
+                medidas_auto = calcular_medidas_automaticas(geom_principal)
+
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
@@ -822,20 +842,44 @@ try:
             st.markdown("- N/D")
 
           # ====================================================
-          # VISTA PREVIA DE CONTROL (Croquis Automático)
+          # CASILLAS EDITABLES AUTOCOMPLETADAS CON MEDIDAS
+          # ====================================================
+          st.subheader("📏 Ajuste y Verificación de Medidas por Lado")
+          st.markdown(
+              "<p style='font-size:12px; color:#555;'>El sistema"
+              " autocompletó las medidas calculadas. Puede modificarlas si"
+              " observa alguna variación:</p>",
+              unsafe_allow_html=True,
+          )
+
+          medidas_editadas = []
+          num_lados = len(medidas_auto) if medidas_auto else 4
+          cols_medidas = st.columns(min(num_lados, 4))
+
+          for i in range(num_lados):
+            val_defecto = medidas_auto[i] if i < len(medidas_auto) else "10.0"
+            col_idx = i % 4
+            with cols_medidas[col_idx]:
+              val_edit = st.text_input(
+                  f"Lado {i+1}", value=val_defecto, key=f"lado_edit_{i}"
+              )
+              medidas_editadas.append(val_edit)
+
+          # ====================================================
+          # VISTA PREVIA DE CONTROL (Croquis con medidas editables)
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
-          st.subheader("👁️ Vista Previa del Croquis Automático")
+          st.subheader("👁️ Vista Previa del Croquis")
           try:
             if not gdf_parcela.empty:
-              img_prev = generar_imagen_croquis_automatico(
-                  gdf_parcela, linderos_vecinos
+              img_prev = generar_imagen_croquis_con_medidas(
+                  gdf_parcela, linderos_vecinos, medidas_editadas
               )
               st.image(
                   img_prev,
                   caption=(
-                      "Medidas calculadas con calibración independiente en X e"
-                      " Y"
+                      "Vista previa actualizada con los valores de las"
+                      " casillas"
                   ),
                   width=350,
               )
@@ -871,8 +915,8 @@ try:
       buffer_imagen_zonificacion = None
       try:
         if not gdf_parcela.empty:
-          buffer_imagen_mapa = generar_imagen_croquis_automatico(
-              gdf_parcela, linderos_vecinos
+          buffer_imagen_mapa = generar_imagen_croquis_con_medidas(
+              gdf_parcela, linderos_vecinos, medidas_editadas
           )
           buffer_imagen_zonificacion = generar_imagen_zonificacion(
               gdf_parcela, linderos_vecinos, df, col_match
