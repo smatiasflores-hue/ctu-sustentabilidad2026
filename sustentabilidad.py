@@ -104,6 +104,53 @@ st.markdown(
 )
 
 
+# Función inteligente de geolocalización de calle (con respaldo en vértices externos)
+@st.cache_data(ttl=3600)
+def obtener_calle_cercana(lat, lon, geom_parcela=None):
+  try:
+    headers = {
+        "User-Agent": (
+            "CertificadoTecnicoUrbanistico-LaPlata/2.0"
+            " (contacto@estudio.com)"
+        )
+    }
+    # 1. Intentar en el centroide exacto
+    url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=18"
+    response = requests.get(url, headers=headers, timeout=2)
+    if response.status_code == 200:
+      data = response.json()
+      address = data.get("address", {})
+      calle = (
+          address.get("road")
+          or address.get("pedestrian")
+          or address.get("suburb")
+      )
+      if calle:
+        return calle
+
+    # 2. Si falla o es lote interno, probamos consultando los vértices del polígono
+    if geom_parcela is not None:
+      coords = list(geom_parcela.exterior.coords)
+      if len(coords) > 0:
+        lat_v = coords[0][1]
+        lon_v = coords[0][0]
+        url_v = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat_v}&lon={lon_v}&zoom=18"
+        resp_v = requests.get(url_v, headers=headers, timeout=2)
+        if resp_v.status_code == 200:
+          data_v = resp_v.json()
+          addr_v = data_v.get("address", {})
+          calle_v = (
+              addr_v.get("road")
+              or addr_v.get("pedestrian")
+              or addr_v.get("suburb")
+          )
+          if calle_v:
+            return calle_v
+  except Exception:
+    pass
+  return ""
+
+
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
 def extraer_parcela_de_cca(cca_str):
   try:
@@ -189,23 +236,20 @@ def analizar_frente_parcela(geom_parcela, linderos_vecinos):
     dy = (p2[1] - p1[1]) * factor_y
     longitud = np.hypot(dx, dy)
 
-    # Descartar pasillos extremos (ej: lados menores a 2 metros o mayores a 45 metros que parecen fondos)
     if longitud >= 3.0 and longitud <= 40.0:
       candidatos_frente.append((longitud, i, p1, p2))
 
   if not candidatos_frente:
-    # Respaldo si no encuentra rango estándar: toma el lado mediano
     idx_frente = 0
     longitud_frente = 10.0
     p1 = vertices[0]
     p2 = vertices[1]
   else:
-    # Selecciona el candidato más lógico para frente (evitando los pasillos muy angostos de <3m o los fondos de >40m)
-    # Ordenamos por cercanía a un ancho de lote típico o tomamos el que no sea el extremo absoluto
     candidatos_frente.sort(key=lambda x: x[0], reverse=True)
-    # Si hay varios, evitamos el más largo absoluto si supera por mucho al promedio (caso pasillo/corazón)
-    if len(candidatos_frente) > 1 and candidatos_frente[0][0] > 2.5 * candidatos_frente[-1][0]:
-      # El más largo es probablemente el fondo/pasillo, elegimos el segundo o el intermedio
+    if (
+        len(candidatos_frente) > 1
+        and candidatos_frente[0][0] > 2.5 * candidatos_frente[-1][0]
+    ):
       longitud_frente, idx_frente, p1, p2 = candidatos_frente[1]
     else:
       longitud_frente, idx_frente, p1, p2 = candidatos_frente[0]
@@ -217,9 +261,13 @@ def analizar_frente_parcela(geom_parcela, linderos_vecinos):
   d_cent_x = pmx - c_prin.x
 
   if abs(d_cent_y) > abs(d_cent_x):
-    orientacion = "Norte (Frente a Calle)" if d_cent_y > 0 else "Sur (Frente a Calle)"
+    orientacion = (
+        "Norte (Frente a Calle)" if d_cent_y > 0 else "Sur (Frente a Calle)"
+    )
   else:
-    orientacion = "Este (Frente a Calle)" if d_cent_x > 0 else "Oeste (Frente a Calle)"
+    orientacion = (
+        "Este (Frente a Calle)" if d_cent_x > 0 else "Oeste (Frente a Calle)"
+    )
 
   return f"Lado {idx_frente+1} ({round(longitud_frente,1)}m)", orientacion
 
@@ -673,6 +721,7 @@ try:
         col_match = None
         medidas_auto = []
         info_frente = ""
+        calle_autocompletada = ""
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -697,6 +746,11 @@ try:
 
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
+
+                # Búsqueda automática e inteligente de calle cercana con respaldo en vértices
+                calle_autocompletada = obtener_calle_cercana(
+                    lat, lon, geom_principal
+                )
 
                 try:
                   linderos_cercanos = gdf[
@@ -836,16 +890,21 @@ try:
 
           st.markdown("")
 
-          # Campo editable para la calle (100% control profesional)
+          # Campo de calle autocompletado inteligentemente y totalmente editable
           st.subheader("📍 Calle de Referencia (Frente)")
-          sugerencia_calle = (
-              f"Frente hacia {orientacion_lm.split(' ')[0]}"
-              if orientacion_lm != "No determinada"
-              else "Calle 26"
+          valor_calle_inicial = (
+              calle_autocompletada
+              if calle_autocompletada
+              else (
+                  f"Frente hacia {orientacion_lm.split(' ')[0]}"
+                  if orientacion_lm != "No determinada"
+                  else "Calle 26"
+              )
           )
           calle_input = st.text_input(
-              "Indique la calle del frente del inmueble:",
-              value=sugerencia_calle,
+              "Indique la calle del frente del inmueble (autocompletada o"
+              " editable):",
+              value=valor_calle_inicial,
               key="calle_editable_input",
           )
 
