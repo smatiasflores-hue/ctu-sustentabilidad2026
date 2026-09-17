@@ -171,13 +171,16 @@ def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
     return "Entre Medianeras"
 
 
-# Función para generar el documento Word basado en una plantilla (.docx)
+# Función para generar el documento Word basado en la plantilla exacta
 def generar_documento_word(contexto_datos):
   try:
+    # Carga estricta de la plantilla Word en la misma carpeta
     doc = Document("plantilla_certificado.docx")
-  except Exception:
+  except Exception as e:
+    # Mensaje de respaldo en caso de que no encuentre el archivo en el directorio local
     doc = Document()
-    doc.add_heading("Certificado Técnico Urbanístico", 0)
+    doc.add_heading("Error: No se encontró plantilla_certificado.docx", 0)
+    doc.add_paragraph(f"Detalle técnico: {e}")
 
   reemplazos = {
       "{{PART}}": str(contexto_datos.get("partido", "")),
@@ -193,7 +196,7 @@ def generar_documento_word(contexto_datos):
       "{{ARA}}": str(contexto_datos.get("area", "")),
       "{{SUP}}": str(contexto_datos.get("superficie", "N/D")),
       "{{LOLI}}": str(contexto_datos.get("linderos_texto", "")),
-      "{{MAPO}}": "[Croquis de Ubicación]",
+      "{{MAPO}}": "[Croquis de Ubicación GIS]",
       "{{PROP}}": str(contexto_datos.get("propietario", "No indicado")),
       "{{AGUA}}": str(contexto_datos.get("agua", "")),
       "{{GAS}}": str(contexto_datos.get("gas", "")),
@@ -203,11 +206,7 @@ def generar_documento_word(contexto_datos):
       "{{PAV}}": str(contexto_datos.get("pavimento", "")),
       "{{ORDM}}": str(contexto_datos.get("ordenanza", "")),
       "{{ZONA}}": str(contexto_datos.get("zona", "")),
-      "{{ud}}": str(
-          contexto_datos.get(
-              "usos_admitidos", "Usos acordes a normativa zonal vigente."
-          )
-      ),
+      "{{ud}}": str(contexto_datos.get("usos_admitidos", "")),
       "{{PROF}}": str(contexto_datos.get("profesional", "No indicado")),
   }
 
@@ -636,7 +635,6 @@ try:
       st.markdown("---")
       st.subheader("📥 Generación de Documento Oficial")
 
-      # Recopilamos ordenanzas municipales en un solo string para {{ORDM}}
       ordenanza_str = (
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
