@@ -69,7 +69,7 @@ st.markdown(
             border-bottom: 2px solid #1f77b4;
             padding-bottom: 2px;
             color: #0d3b66;
-            break-after: avoid; /* Evita que el título quede huérfano separado de su contenido */
+            break-after: avoid;
         }
 
         /* 6. Subtítulos */
@@ -120,7 +120,6 @@ st.markdown(
                 white-space: normal !important;
             }
             
-            /* Evitar saltos de página forzados innecesarios que crean hojas en blanco */
             div {
                 page-break-inside: avoid;
             }
@@ -368,7 +367,7 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS (Con mapa interactivo y linderos vecinos)
+      # 1. DATOS (Con mapa y sección de Lotes Linderos abajo)
       # ====================================================
       st.header("1. DATOS")
 
@@ -378,6 +377,7 @@ try:
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
         calle_detectada = "Calculando..."
+        linderos_vecinos = gpd.GeoDataFrame()
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -416,7 +416,7 @@ try:
                 except Exception:
                   linderos_vecinos = gpd.GeoDataFrame()
 
-                # Mapa centrado con controles bloqueados para consistencia de zoom
+                # Mapa centrado con controles bloqueados
                 m = folium.Map(
                     location=[lat, lon],
                     zoom_start=19,
@@ -467,6 +467,49 @@ try:
               st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
+
+          # ====================================================
+          # NUEVA SECCIÓN: Lotes Linderos debajo de la ubicación
+          # ====================================================
+          st.markdown("<br>", unsafe_allow_html=True)
+          st.subheader("Lotes Linderos")
+          if not linderos_vecinos.empty:
+            # Intentamos extraer los identificadores de los linderos encontrados
+            col_id = (
+                col_match
+                if col_match in linderos_vecinos.columns
+                else linderos_vecinos.columns[0]
+            )
+            linderos_ids = (
+                linderos_vecinos[col_id]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist()
+            )
+
+            if linderos_ids:
+              # Mostramos una lista limpia o métrica con los vecinos detectados
+              for idx, lid in enumerate(
+                  linderos_ids[:8], 1
+              ):  # Mostramos hasta 8 linderos máximo
+                st.markdown(
+                    f"<p style='margin: 0px 0px 4px 0px; font-size:12px;'"
+                    f" color:#555;'>• Lindero {idx}: <code>{lid}</code></p>",
+                    unsafe_allow_html=True,
+                )
+            else:
+              st.markdown(
+                  "<p style='font-size:12px; color:#666;'>No se registran"
+                  " identificadores para los linderos.</p>",
+                  unsafe_allow_html=True,
+              )
+          else:
+            st.markdown(
+                "<p style='font-size:12px; color:#666;'>No se detectaron lotes"
+                " linderos cercanos.</p>",
+                unsafe_allow_html=True,
+            )
 
         with col_datos:
           st.subheader("a. Datos Catastrales")
@@ -606,9 +649,9 @@ try:
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
-      # ====================================================
+      # ----------------------------------------------------
       # BOTÓN DE DESCARGA DE WORD OFICIAL (.DOCX)
-      # ====================================================
+      # ----------------------------------------------------
       st.markdown("---")
       st.subheader("📥 Generación de Documento Oficial")
 
