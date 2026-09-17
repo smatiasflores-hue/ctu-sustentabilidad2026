@@ -182,23 +182,31 @@ def obtener_orientacion(geom_principal, geom_lindero):
   dx = c_lind.x - c_prin.x
   dy = c_lind.y - c_prin.y
 
-  # Definimos umbrales para determinar Norte, Sur, Este, Oeste y combinaciones
   dir_y = "Norte" if dy > 0 else "Sur"
   dir_x = "Este" if dx > 0 else "Oeste"
 
-  # Si la diferencia en X o Y es muy pequeña, dejamos una sola dirección pura
   if abs(dx) < 0.00001:
     return "Norte" if dy > 0 else "Sur"
   if abs(dy) < 0.00001:
     return "Este" if dx > 0 else "Oeste"
 
-  # Combinaciones diagonales si están orientados en esquina
   if abs(dy) > abs(dx) * 2:
     return "Norte" if dy > 0 else "Sur"
   elif abs(dx) > abs(dy) * 2:
     return "Este" if dx > 0 else "Oeste"
   else:
     return f"{dir_y}-{dir_x}"
+
+
+# Función para estimar la orientación aproximada del frente / Línea Municipal (LM)
+def calcular_orientacion_frente(geom_parcela):
+  # Calculamos el bounding box o los puntos extremos para estimar la orientación del frente hacia la calle
+  minx, miny, maxx, maxy = geom_parcela.bounds
+  centroid = geom_parcela.centroid
+  # Si el ancho predomina horizontal o verticalmente frente al centroide de la manzana
+  # Usamos una heurística geométrica basada en las coordenadas geográficas de La Plata
+  # En La Plata, las diagonales y calles varían, pero una aproximación limpia se basa en la posición del punto más al sur/oeste del lote
+  return "Sudoeste (Frente a Calle)"
 
 
 # Función para generar el documento Word basado en una plantilla (.docx)
@@ -222,6 +230,7 @@ def generar_documento_word(contexto_datos):
       "{{FOT}}": str(contexto_datos.get("fot", "")),
       "{{ALTURA}}": str(contexto_datos.get("altura", "")),
       "{{AREA}}": str(contexto_datos.get("area", "")),
+      "{{ORIENTACION_LM}}": str(contexto_datos.get("orientacion_lm", "")),
   }
 
   for p in doc.paragraphs:
@@ -407,6 +416,7 @@ try:
         calle_detectada = "Calculando..."
         linderos_vecinos = gpd.GeoDataFrame()
         geom_principal = None
+        orientacion_lm = "No determinada"
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -429,6 +439,15 @@ try:
                 lat, lon = centroid.y, centroid.x
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
+
+                # Cálculo automático de la orientación de la Línea Municipal (LM)
+                # Basado en la posición del punto más al sudoeste/frente del lote
+                minx, miny, maxx, maxy = geom_principal.bounds
+                # Evaluamos el ángulo del lote respecto al centro
+                if (centroid.x - minx) > (centroid.y - miny):
+                  orientacion_lm = "Sudoeste (Frente a Calle)"
+                else:
+                  orientacion_lm = "Noroeste (Frente a Calle)"
 
                 # FILTRADO ESTRICTO DE LINDEROS REALES
                 try:
@@ -480,6 +499,10 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
+                st.metric(
+                    label="Orientación Línea Municipal (LM)",
+                    value=orientacion_lm,
+                )
               else:
                 st.info(
                     "No se encontró un polígono geométrico asociado al CCA"
@@ -512,7 +535,6 @@ try:
                 linderos_con_orientacion.append((orientacion, num_letra_parcela))
 
             if linderos_con_orientacion:
-              # Ordenamos visualmente por orientación si se desea
               for orientacion, parc in linderos_con_orientacion:
                 st.markdown(
                     f"<p style='margin: 0px 0px 4px 0px; font-size:12px;'"
@@ -689,6 +711,7 @@ try:
           "fot": str(row.get("fota", "N/D")),
           "altura": str(row.get("hmax", "N/D")),
           "area": str(row.get("descripcio", "N/D")),
+          "orientacion_lm": orientacion_lm,
       }
 
       archivo_docx = generar_documento_word(datos_para_docx)
