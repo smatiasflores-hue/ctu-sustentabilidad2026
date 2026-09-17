@@ -68,12 +68,11 @@ st.markdown(
 )
 
 
-# Función mejorada de geolocalización con búsqueda ampliada y respaldo por proximidad
+# Función de geolocalización ampliada
 @st.cache_data(ttl=3600)
 def obtener_calle_cercana(lat, lon):
   try:
     headers = {"User-Agent": "CertificadoTecnicoUrbanistico/2.0"}
-    # 1. Búsqueda principal con zoom ampliado de calle
     url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=17&addressdetails=1"
     response = requests.get(url, headers=headers, timeout=3)
     if response.status_code == 200:
@@ -88,7 +87,6 @@ def obtener_calle_cercana(lat, lon):
       if calle:
         return calle
 
-    # 2. Respaldo por desplazamiento leve de coordenadas si el centroide cae desalineado
     for dlat, dlon in [
         (0.00015, 0),
         (-0.00015, 0),
@@ -107,7 +105,6 @@ def obtener_calle_cercana(lat, lon):
         )
         if calle_alt:
           return calle_alt
-
   except Exception:
     pass
   return ""
@@ -663,7 +660,7 @@ try:
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
-                # Geolocalización ampliada de la calle cercana
+                # Geolocalización estándar
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 minx, miny, maxx, maxy = geom_principal.bounds
@@ -756,7 +753,7 @@ try:
                     label="Orientación Línea Municipal", value=orientacion_lm
                 )
                 st.metric(
-                    label="Calle Referencia",
+                    label="Calle Referencia (Auto)",
                     value=calle_detectada
                     if calle_detectada
                     else "No disponible",
@@ -768,7 +765,7 @@ try:
                     f" `{cca_val}`."
                 )
             else:
-              st.warning("The `lotes.geojson` file lacks a join column.")
+              st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
@@ -803,12 +800,29 @@ try:
         with col_datos:
           st.subheader("a. Datos Catastrales")
 
-          # Campo de calle autocompletado y 100% editable
-          calle_input = st.text_input(
-              "📍 Calle de Referencia (Frente del Inmueble):",
-              value=calle_detectada if calle_detectada else "",
-              key="calle_editable_input",
+          # Selector inteligente para esquinas / frente principal o escritura manual
+          st.subheader("📍 Calle de Referencia (Frente del Inmueble)")
+          opciones_calle = [
+              calle_detectada if calle_detectada else "Calle no identificada",
+              "Escribir manualmente...",
+          ]
+          # Si detectamos linderos o es esquina, podemos sugerir alternativas comunes o dejar la opción libre
+          seleccion_calle = st.selectbox(
+              "Seleccione o confirme la calle del frente principal:",
+              options=opciones_calle,
+              key="select_calle_frente",
           )
+
+          if seleccion_calle == "Escribir manualmente...":
+            calle_input = st.text_input(
+                "Ingrese la calle del frente:", value="", key="calle_manual_input"
+            )
+          else:
+            calle_input = st.text_input(
+                "Edite si es necesario:",
+                value=seleccion_calle,
+                key="calle_editable_input",
+            )
 
           c_cat1, c_cat2, c_cat3 = st.columns(3)
           with c_cat1:
