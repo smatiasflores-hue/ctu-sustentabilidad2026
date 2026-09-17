@@ -6,7 +6,6 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-requests = requests
 import requests
 import streamlit as st
 from streamlit_folium import st_folium
@@ -185,7 +184,6 @@ def obtener_vertices_parcela(geom_parcela):
       coords = list(geom_parcela.geoms[0].exterior.coords)
     else:
       return []
-    # Eliminamos el último punto duplicado que cierra el polígono
     if coords[0] == coords[-1]:
       coords = coords[:-1]
     return coords
@@ -250,15 +248,13 @@ def generar_imagen_croquis_con_medidas(
         weight="bold",
     )
 
-    # Dibujar las medidas ingresadas en el punto medio de cada segmento/lado
     vertices = obtener_vertices_parcela(geom_prin)
     if vertices and len(medidas_lados) == len(vertices):
       num_v = len(vertices)
       for i in range(num_v):
         p1 = vertices[i]
-        p2 = vertices[(i + 1) % num_v]  # Siguiente vértice (cierra el ciclo)
+        p2 = vertices[(i + 1) % num_v]
 
-        # Punto medio del segmento
         mx = (p1[0] + p2[0]) / 2.0
         my = (p1[1] + p2[1]) / 2.0
 
@@ -281,7 +277,6 @@ def generar_imagen_croquis_con_medidas(
               ),
           )
 
-    # Zoom y centrado estricto con margen reducido
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
     margen_x = (maxx - minx) * 0.25 if maxx != minx else 0.0001
     margen_y = (maxy - miny) * 0.25 if maxy != miny else 0.0001
@@ -596,7 +591,6 @@ try:
           else [str(row.get("observacio_2", "N/D"))]
       )
 
-      # Obtención previa de geometría y lados para construir los inputs dinámicos
       try:
         gdf_temp = cargar_geojson()
         col_m_temp = None
@@ -842,9 +836,7 @@ try:
           )
 
           medidas_ingresadas = []
-          cols_medidas = st.columns(
-              min(num_lados_detectados, 4)
-          )  # Hasta 4 columnas por fila
+          cols_medidas = st.columns(min(num_lados_detectados, 4))
           for i in range(num_lados_detectados):
             col_idx = i % 4
             with cols_medidas[col_idx]:
@@ -857,7 +849,7 @@ try:
               medidas_ingresadas.append(val_m)
 
           # ====================================================
-          # VISTA PREVIA DE CONFIRMACIÓN (Segundo Mapa en Pantalla)
+          # VISTA PREVIA DE CONTROL (Segundo Mapa en Pantalla)
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("👁️ Vista Previa de Control (Croquis con Medidas)")
@@ -902,7 +894,6 @@ try:
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
 
-      # Generación final de imágenes para el documento Word
       buffer_imagen_mapa = None
       buffer_imagen_zonificacion = None
       try:
