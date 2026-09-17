@@ -82,12 +82,12 @@ def obtener_calle_cercana(lat, lon):
           address.get("road")
           or address.get("pedestrian")
           or address.get("suburb")
-          or ""
+          or "Calle no identificada"
       )
       return calle
   except Exception:
     pass
-  return ""
+  return "No disponible"
 
 
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
@@ -609,7 +609,7 @@ try:
 
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
-        calle_detectada = ""
+        calle_detectada = "Cargando..."
         linderos_vecinos = gpd.GeoDataFrame()
         gdf_parcela = gpd.GeoDataFrame()
         geom_principal = None
@@ -640,7 +640,7 @@ try:
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
-                # Geolocalización original de la calle
+                # Geolocalización de la calle cercana
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 minx, miny, maxx, maxy = geom_principal.bounds
@@ -732,6 +732,7 @@ try:
                 st.metric(
                     label="Orientación Línea Municipal", value=orientacion_lm
                 )
+                st.metric(label="Calle Referencia", value=calle_detectada)
 
               else:
                 st.info(
@@ -775,14 +776,9 @@ try:
           st.subheader("a. Datos Catastrales")
 
           # Campo de calle autocompletado y 100% editable
-          valor_inicial_calle = (
-              calle_detectada
-              if calle_detectada
-              else "Calle no identificada / Escribir manualmente"
-          )
           calle_input = st.text_input(
               "📍 Calle de Referencia (Frente del Inmueble):",
-              value=valor_inicial_calle,
+              value=calle_detectada if calle_detectada else "",
               key="calle_editable_input",
           )
 
