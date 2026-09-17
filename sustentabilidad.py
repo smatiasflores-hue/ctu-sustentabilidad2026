@@ -76,9 +76,10 @@ def obtener_calle_cercana(lat, lon):
   return ""
 
 
-# Carga optimizada y ligera del CSV (usando solo las columnas indispensables para ahorrar RAM)
+# Carga optimizada y ligera del CSV desde GitHub (con selección de columnas para ahorrar RAM)
 @st.cache_data
 def cargar_datos():
+  url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
   columnas_utiles = [
       "CCA",
       "PDA",
@@ -92,7 +93,7 @@ def cargar_datos():
       "observacio_2",
   ]
   df = pd.read_csv(
-      "datos.csv",
+      url_csv,
       sep=";",
       encoding="latin-1",
       low_memory=False,
@@ -102,11 +103,11 @@ def cargar_datos():
   return df
 
 
-# Carga optimizada del GeoJSON (liberando índices pesados)
+# Carga optimizada del GeoJSON desde GitHub
 @st.cache_data
 def cargar_geojson():
-  gdf = gpd.read_file("lotes.geojson")
-  return gdf
+  url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
+  return gpd.read_file(url_geojson)
 
 
 # Encabezado superior
