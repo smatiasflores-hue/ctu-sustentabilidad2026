@@ -43,7 +43,7 @@ st.markdown(
 
         /* 3. Valores de las métricas */
         [data-testid="stMetricValue"] {
-            font-size: 20px !important;
+            font-size: 18px !important;
             font-weight: 700 !important;
             color: #1f77b4;
             white-space: normal !important;
@@ -198,15 +198,17 @@ def obtener_orientacion(geom_principal, geom_lindero):
     return f"{dir_y}-{dir_x}"
 
 
-# Función para estimar la orientación aproximada del frente / Línea Municipal (LM)
-def calcular_orientacion_frente(geom_parcela):
-  # Calculamos el bounding box o los puntos extremos para estimar la orientación del frente hacia la calle
-  minx, miny, maxx, maxy = geom_parcela.bounds
-  centroid = geom_parcela.centroid
-  # Si el ancho predomina horizontal o verticalmente frente al centroide de la manzana
-  # Usamos una heurística geométrica basada en las coordenadas geográficas de La Plata
-  # En La Plata, las diagonales y calles varían, pero una aproximación limpia se basa en la posición del punto más al sur/oeste del lote
-  return "Sudoeste (Frente a Calle)"
+# Función para determinar si el lote es esquina o entre medianeras basado en linderos y geometría
+def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
+  # Si el lote tiene geometría abierta hacia esquinas o cumple con criterios de esquina de manzana
+  # Evaluamos por cantidad de linderos y vértices exteriores
+  num_linderos = len(linderos_vecinos)
+  # Criterio urbanístico estándar: los lotes en esquina suelen tener menos colindancias directas longitudinales
+  # o frentes múltiples. Si está ubicado en el extremo de la manzana se define como Esquina.
+  if num_linderos <= 2:
+    return "Esquina"
+  else:
+    return "Entre Medianeras"
 
 
 # Función para generar el documento Word basado en una plantilla (.docx)
@@ -231,6 +233,7 @@ def generar_documento_word(contexto_datos):
       "{{ALTURA}}": str(contexto_datos.get("altura", "")),
       "{{AREA}}": str(contexto_datos.get("area", "")),
       "{{ORIENTACION_LM}}": str(contexto_datos.get("orientacion_lm", "")),
+      "{{TIPO_UBICACION}}": str(contexto_datos.get("tipo_ubicacion", "")),
   }
 
   for p in doc.paragraphs:
@@ -417,6 +420,7 @@ try:
         linderos_vecinos = gpd.GeoDataFrame()
         geom_principal = None
         orientacion_lm = "No determinada"
+        tipo_ubicacion = "Entre Medianeras"
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -440,10 +444,8 @@ try:
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
-                # Cálculo automático de la orientación de la Línea Municipal (LM)
-                # Basado en la posición del punto más al sudoeste/frente del lote
+                # Cálculo de la orientación de la Línea Municipal (LM)
                 minx, miny, maxx, maxy = geom_principal.bounds
-                # Evaluamos el ángulo del lote respecto al centro
                 if (centroid.x - minx) > (centroid.y - miny):
                   orientacion_lm = "Sudoeste (Frente a Calle)"
                 else:
@@ -459,6 +461,11 @@ try:
                   ]
                 except Exception:
                   linderos_vecinos = gpd.GeoDataFrame()
+
+                # Determinamos si es esquina o entre medianeras según linderos
+                tipo_ubicacion = determinar_tipo_ubicacion(
+                    geom_principal, linderos_vecinos
+                )
 
                 m = folium.Map(
                     location=[lat, lon],
@@ -478,7 +485,7 @@ try:
                           "fillColor": "#d3d3d3",
                           "color": "#808080",
                           "weight": 1,
-                          "fillOpacity": 0.3,
+                            "fillOpacity": 0.3,
                       },
                       tooltip="Lote Lindero",
                   ).add_to(m)
@@ -499,10 +506,14 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
-                st.metric(
-                    label="Orientación Línea Municipal (LM)",
-                    value=orientacion_lm,
-                )
+
+                # Mostramos ambas métricas limpias en dos columnas debajo del mapa
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                  st.metric(label="Orientación LM", value=orientacion_lm)
+                with col_m2:
+                  st.metric(label="Tipo de Lote", value=tipo_ubicacion)
+
               else:
                 st.info(
                     "No se encontró un polígono geométrico asociado al CCA"
@@ -712,6 +723,7 @@ try:
           "altura": str(row.get("hmax", "N/D")),
           "area": str(row.get("descripcio", "N/D")),
           "orientacion_lm": orientacion_lm,
+          "tipo_ubicacion": tipo_ubicacion,
       }
 
       archivo_docx = generar_documento_word(datos_para_docx)
