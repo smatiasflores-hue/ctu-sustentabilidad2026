@@ -173,17 +173,35 @@ def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
     return "Entre Medianeras"
 
 
-# Función para generar una imagen estática del croquis catastral (Lote + Linderos + Números)
-def generar_imagen_croquis(gdf_parcela, linderos_vecinos):
+# Función para contar las líneas/lados (aristas) del polígono principal
+def contar_lados_parcela(geom_parcela):
+  try:
+    geom_tipo = geom_parcela.geom_type
+    if geom_tipo == "Polygon":
+      coords = list(geom_parcela.exterior.coords)
+      return len(coords) - 1
+    elif geom_tipo == "MultiPolygon":
+      coords = list(geom_parcela.geoms[0].exterior.coords)
+      return len(coords) - 1
+  except Exception:
+    pass
+  return 4
+
+
+# Función 1: Croquis de Ubicación (Líneas negras con número de parcela)
+def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
   ax.set_xticks([])
   ax.set_yticks([])
 
-  # Dibujar linderos en gris claro con borde gris
   if not linderos_vecinos.empty:
     linderos_vecinos.plot(
-        ax=ax, color="#d3d3d3", edgecolor="#808080", linewidth=0.8, alpha=0.6
+        ax=ax,
+        facecolor="none",
+        edgecolor="#555555",
+        linewidth=0.7,
+        linestyle="-",
     )
     col_id = (
         linderos_vecinos.columns[0]
@@ -199,17 +217,15 @@ def generar_imagen_croquis(gdf_parcela, linderos_vecinos):
             centroid.x,
             centroid.y,
             parc_txt,
-            fontsize=8,
+            fontsize=7,
             ha="center",
             va="center",
-            color="#444444",
-            weight="bold",
+            color="#333333",
         )
 
-  # Dibujar parcela principal en azul destacado
   if not gdf_parcela.empty:
     gdf_parcela.plot(
-        ax=ax, color="#1f77b4", edgecolor="#0d3b66", linewidth=1.5, alpha=0.8
+        ax=ax, facecolor="none", edgecolor="#000000", linewidth=1.5
     )
     c_prin = gdf_parcela.geometry.iloc[0].centroid
     parc_prin = extraer_parcela_de_cca(
@@ -222,14 +238,90 @@ def generar_imagen_croquis(gdf_parcela, linderos_vecinos):
         fontsize=9,
         ha="center",
         va="center",
-        color="#ffffff",
+        color="#000000",
         weight="bold",
     )
 
   plt.tight_layout()
   img_buffer = BytesIO()
   plt.savefig(
-      img_buffer, format="png", dpi=200, bbox_inches="tight", transparent=True
+      img_buffer, format="png", dpi=300, bbox_inches="tight", transparent=True
+  )
+  plt.close(fig)
+  img_buffer.seek(0)
+  return img_buffer
+
+
+# Función 2: Mapa de Zonificación en radio de 60 metros con etiquetas de ZONA (designacio)
+def generar_imagen_zonificacion(
+    gdf_parcela, gdf_completo_geo, df_csv_datos, cca_principal
+):
+  fig, ax = plt.subplots(figsize=(4, 4))
+  plt.box(False)
+  ax.set_xticks([])
+  ax.set_yticks([])
+
+  if not gdf_parcela.empty:
+    geom_prin = gdf_parcela.geometry.iloc[0]
+    # Buffer aproximado de 60 metros (en coordenadas WGS84 equivalen aprox a 0.00055 grados)
+    buffer_zona = geom_prin.buffer(0.00055)
+
+    # Filtrar lotes dentro del radio de 60 metros
+    lotes_cercanos = gdf_completo_geo[
+        gdf_completo_geo.geometry.intersects(buffer_zona)
+    ]
+
+    if not lotes_cercanos.empty:
+      lotes_cercanos.plot(
+          ax=ax,
+          facecolor="none",
+          edgecolor="#444444",
+          linewidth=0.8,
+          linestyle="-",
+      )
+
+      # Identificar columna de unión en el GeoJSON
+      col_id_geo = None
+      for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
+        if c in lotes_cercanos.columns:
+          col_id_geo = c
+          break
+
+      for _, row_lote in lotes_cercanos.iterrows():
+        cca_lote = (
+            str(row_lote.get(col_id_geo, "")) if col_id_geo else ""
+        )
+        # Buscar la zona (designacio) correspondiente en el CSV de datos
+        match_csv = df_csv_datos[df_csv_datos["CCA"].astype(str) == cca_lote]
+        zona_txt = "N/D"
+        if not match_csv.empty:
+          zona_txt = str(match_csv.iloc[0].get("designacio", "N/D"))
+
+        c_lote = row_lote.geometry.centroid
+        # Acortamos texto de zona si es muy largo para que entre bien en el plano
+        zona_corto = (
+            zona_txt[:10] + "..." if len(zona_txt) > 10 else zona_txt
+        )
+        ax.text(
+            c_lote.x,
+            c_lote.y,
+            zona_corto,
+            fontsize=6,
+            ha="center",
+            va="center",
+            color="#222222",
+            weight="bold",
+        )
+
+    # Resaltar el lote principal con línea negra más gruesa
+    gdf_parcela.plot(
+        ax=ax, facecolor="none", edgecolor="#000000", linewidth=2.0
+    )
+
+  plt.tight_layout()
+  img_buffer = BytesIO()
+  plt.savefig(
+      img_buffer, format="png", dpi=300, bbox_inches="tight", transparent=True
   )
   plt.close(fig)
   img_buffer.seek(0)
@@ -272,23 +364,27 @@ def generar_documento_word(contexto_datos):
       "{{PROF}}": str(contexto_datos.get("profesional", "No indicado")),
   }
 
-  # Reemplazo de textos en párrafos
   for p in doc.paragraphs:
     for clave, valor in reemplazos.items():
       if clave in p.text:
         p.text = p.text.replace(clave, valor)
 
-  # Reemplazo de textos en tablas y búsqueda de etiqueta {{MAPO}} para insertar la imagen del croquis
   img_croquis = contexto_datos.get("imagen_croquis", None)
+  img_zonificacion = contexto_datos.get("imagen_zonificacion", None)
+
   for tabla in doc.tables:
     for fila in tabla.rows:
       for celda in fila.cells:
-        # Si la celda contiene exactamente {{MAPO}}, vaciamos el texto e insertamos la imagen del mapa
         if "{{MAPO}}" in celda.text and img_croquis is not None:
           celda.text = ""
           p = celda.paragraphs[0]
           run = p.add_run()
           run.add_picture(img_croquis, width=Inches(2.2))
+        elif "{{MAZO}}" in celda.text and img_zonificacion is not None:
+          celda.text = ""
+          p = celda.paragraphs[0]
+          run = p.add_run()
+          run.add_picture(img_zonificacion, width=Inches(2.2))
         else:
           for clave, valor in reemplazos.items():
             if clave in celda.text:
@@ -316,7 +412,6 @@ st.markdown(
 )
 
 
-# Carga optimizada del archivo CSV desde GitHub Releases
 @st.cache_data
 def cargar_datos():
   url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
@@ -330,7 +425,6 @@ def cargar_datos():
   return df
 
 
-# Carga optimizada del archivo GeoJSON de lotes desde GitHub Releases
 @st.cache_data
 def cargar_geojson():
   url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
@@ -345,9 +439,6 @@ try:
   if "partida_buscada" not in st.session_state:
     st.session_state.partida_buscada = ""
 
-  # ----------------------------------------------------
-  # BARRA LATERAL: CONSULTA Y DATOS GENERALES
-  # ----------------------------------------------------
   st.sidebar.header("🔍 Consulta por Partida")
   st.sidebar.markdown("**Estructura:** `055` + `[ 6 dígitos de Partida ]`")
 
@@ -380,9 +471,6 @@ try:
     else:
       st.sidebar.warning("Por favor ingrese un número de partida.")
 
-  # ----------------------------------------------------
-  # LÓGICA DE FILTRADO USANDO LA MEMORIA DE SESIÓN
-  # ----------------------------------------------------
   df_filtrado = pd.DataFrame()
 
   if st.session_state.busqueda_activa and st.session_state.partida_buscada:
@@ -476,6 +564,7 @@ try:
         orientacion_lm = "No determinada"
         tipo_ubicacion = "Entre Medianeras"
         linderos_texto_acumulado = ""
+        cantidad_lados = 4
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -494,6 +583,8 @@ try:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
                 geom_principal = gdf_parcela.geometry.iloc[0]
+                cantidad_lados = contar_lados_parcela(geom_principal)
+
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
@@ -591,6 +682,10 @@ try:
 
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
+                st.info(
+                    f"📐 Análisis Geométrico: El lote posee **{cantidad_lados}"
+                    " lados** identificados."
+                )
 
               else:
                 st.info(
@@ -712,12 +807,16 @@ try:
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
 
-      # Generación de la imagen del croquis GIS para {{MAPO}}
+      # Generación de imágenes para {{MAPO}} y {{MAZO}}
       buffer_imagen_mapa = None
+      buffer_imagen_zonificacion = None
       try:
         if not gdf_parcela.empty:
-          buffer_imagen_mapa = generar_imagen_croquis(
+          buffer_imagen_mapa = generar_imagen_croquis_lineas(
               gdf_parcela, linderos_vecinos
+          )
+          buffer_imagen_zonificacion = generar_imagen_zonificacion(
+              gdf_parcela, gdf, df, cca_val
           )
       except Exception:
         pass
@@ -760,6 +859,7 @@ try:
               + str(row.get("designacio", ""))
           ),
           "imagen_croquis": buffer_imagen_mapa,
+          "imagen_zonificacion": buffer_imagen_zonificacion,
       }
 
       archivo_docx = generar_documento_word(datos_para_docx)
@@ -781,7 +881,7 @@ try:
       st.sidebar.error("No se encontró ninguna parcela con ese número.")
   else:
     st.info(
-        "👈 Ingrese los 6 dígitos de la Partida en la barra lateral y presional"
+        "👈 Ingrese los 6 dígitos de la Partida en la barra lateral y presione"
         ' "Consultar Parcela" para ver los datos de la parcela.'
     )
 
