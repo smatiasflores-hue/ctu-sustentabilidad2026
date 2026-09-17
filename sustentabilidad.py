@@ -188,7 +188,7 @@ def contar_lados_parcela(geom_parcela):
   return 4
 
 
-# Función 1: Croquis de Ubicación centrado y con zoom en el lote principal
+# Función 1: Croquis de Ubicación con mayor zoom centrado en el lote
 def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
@@ -242,10 +242,10 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
         weight="bold",
     )
 
-    # Zoom y centrado estricto basado en los límites de la parcela principal (+ margen de aire)
+    # Margen reducido (0.25) para lograr un zoom mayor y más cercano al lote
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
-    margen_x = (maxx - minx) * 0.8 if maxx != minx else 0.0001
-    margen_y = (maxy - miny) * 0.8 if maxy != miny else 0.0001
+    margen_x = (maxx - minx) * 0.25 if maxx != minx else 0.0001
+    margen_y = (maxy - miny) * 0.25 if maxy != miny else 0.0001
     ax.set_xlim(minx - margen_x, maxx + margen_x)
     ax.set_ylim(miny - margen_y, maxy + margen_y)
 
@@ -259,71 +259,73 @@ def generar_imagen_croquis_lineas(gdf_parcela, linderos_vecinos):
   return img_buffer
 
 
-# Función 2: Mapa de Zonificación centrado y con zoom en el lote principal
+# Función 2: Mapa de Zonificación robusto (Lote + Linderos etiquetados con ZONA)
 def generar_imagen_zonificacion(
-    gdf_parcela, gdf_completo_geo, df_csv_datos, cca_principal
+    gdf_parcela, linderos_vecinos, df_csv_datos, col_match
 ):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
   ax.set_xticks([])
   ax.set_yticks([])
 
-  if not gdf_parcela.empty:
-    geom_prin = gdf_parcela.geometry.iloc[0]
-    # Buffer de radio cercano para capturar el entorno inmediato
-    buffer_zona = geom_prin.buffer(0.0006)
-
-    lotes_cercanos = gdf_completo_geo[
-        gdf_completo_geo.geometry.intersects(buffer_zona)
-    ]
-
-    if not lotes_cercanos.empty:
-      lotes_cercanos.plot(
-          ax=ax,
-          facecolor="none",
-          edgecolor="#444444",
-          linewidth=0.8,
-          linestyle="-",
+  if not linderos_vecinos.empty:
+    linderos_vecinos.plot(
+        ax=ax,
+        facecolor="none",
+        edgecolor="#555555",
+        linewidth=0.7,
+        linestyle="-",
+    )
+    for _, row_l in linderos_vecinos.iterrows():
+      cca_l = str(row_l.get(col_match, "")) if col_match else ""
+      match_csv = df_csv_datos[df_csv_datos["CCA"].astype(str) == cca_l]
+      zona_txt = (
+          str(match_csv.iloc[0].get("designacio", "N/D"))
+          if not match_csv.empty
+          else "N/D"
+      )
+      centroid = row_l.geometry.centroid
+      zona_corto = zona_txt[:10] + "..." if len(zona_txt) > 10 else zona_txt
+      ax.text(
+          centroid.x,
+          centroid.y,
+          zona_corto,
+          fontsize=6,
+          ha="center",
+          va="center",
+          color="#333333",
+          weight="bold",
       )
 
-      col_id_geo = None
-      for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
-        if c in lotes_cercanos.columns:
-          col_id_geo = c
-          break
-
-      for _, row_lote in lotes_cercanos.iterrows():
-        cca_lote = (
-            str(row_lote.get(col_id_geo, "")) if col_id_geo else ""
-        )
-        match_csv = df_csv_datos[df_csv_datos["CCA"].astype(str) == cca_lote]
-        zona_txt = "N/D"
-        if not match_csv.empty:
-          zona_txt = str(match_csv.iloc[0].get("designacio", "N/D"))
-
-        c_lote = row_lote.geometry.centroid
-        zona_corto = (
-            zona_txt[:10] + "..." if len(zona_txt) > 10 else zona_txt
-        )
-        ax.text(
-            c_lote.x,
-            c_lote.y,
-            zona_corto,
-            fontsize=6,
-            ha="center",
-            va="center",
-            color="#222222",
-            weight="bold",
-        )
-
+  if not gdf_parcela.empty:
     gdf_parcela.plot(
         ax=ax, facecolor="none", edgecolor="#000000", linewidth=2.0
     )
+    c_prin = gdf_parcela.geometry.iloc[0].centroid
+    match_prin = df_csv_datos[
+        df_csv_datos["CCA"].astype(str)
+        == str(gdf_parcela.iloc[0].get(col_match, ""))
+    ]
+    zona_prin = (
+        str(match_prin.iloc[0].get("designacio", "N/D"))
+        if not match_prin.empty
+        else "N/D"
+    )
+    ax.text(
+        c_prin.x,
+        c_prin.y,
+        zona_prin,
+        fontsize=7,
+        ha="center",
+        va="center",
+        color="#000000",
+        weight="bold",
+    )
 
-    # Zoom y centrado estricto en el lote principal para la hoja de zonificación
+    # Zoom cercano enfocado en el lote principal
     minx, miny, maxx, maxy = gdf_parcela.total_bounds
-    margen_x = (maxx - minx) * 1.2 if maxx != minx else 0.0001
-    margen_y = (maxy - miny) * 1.2 if maxy != miny else 0.0001
+    margen_x = (maxx - minx) * 0.4 if maxx != minx else 0.0001
+    margen_y = (maxy - miny) * 0.4 if maxy != miny else 0.0001
     ax.set_xlim(minx - margen_x, maxx + margen_x)
     ax.set_ylim(miny - margen_y, maxy + margen_y)
 
@@ -574,12 +576,12 @@ try:
         tipo_ubicacion = "Entre Medianeras"
         linderos_texto_acumulado = ""
         cantidad_lados = 4
+        col_match = None
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
           try:
             gdf = cargar_geojson()
-            col_match = None
             for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
               if c in gdf.columns:
                 col_match = c
@@ -643,13 +645,8 @@ try:
                       tooltip="Lote Lindero",
                   ).add_to(m)
 
-                  col_id = (
-                      col_match
-                      if col_match in linderos_vecinos.columns
-                      else linderos_vecinos.columns[0]
-                  )
                   for _, row_l in linderos_vecinos.iterrows():
-                    cca_l = str(row_l.get(col_id, ""))
+                    cca_l = str(row_l.get(col_match, ""))
                     parc_txt = extraer_parcela_de_cca(cca_l)
                     if parc_txt and parc_txt != "-":
                       c_l = row_l.geometry.centroid
@@ -711,14 +708,8 @@ try:
           st.subheader("Lotes Linderos")
           lista_linderos_str = []
           if not linderos_vecinos.empty and geom_principal is not None:
-            col_id = (
-                col_match
-                if col_match in linderos_vecinos.columns
-                else linderos_vecinos.columns[0]
-            )
-
             for _, row_lindero in linderos_vecinos.iterrows():
-              cca_lindero = str(row_lindero.get(col_id, ""))
+              cca_lindero = str(row_lindero.get(col_match, ""))
               num_letra_parcela = extraer_parcela_de_cca(cca_lindero)
               if num_letra_parcela and num_letra_parcela != "-":
                 geom_lindero = row_lindero.geometry
@@ -816,7 +807,7 @@ try:
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
 
-      # Generación de imágenes centradas y con zoom para {{MAPO}} y {{MAZO}}
+      # Generación de imágenes con zoom óptimo y robustas para {{MAPO}} y {{MAZO}}
       buffer_imagen_mapa = None
       buffer_imagen_zonificacion = None
       try:
@@ -825,7 +816,7 @@ try:
               gdf_parcela, linderos_vecinos
           )
           buffer_imagen_zonificacion = generar_imagen_zonificacion(
-              gdf_parcela, gdf, df, cca_val
+              gdf_parcela, linderos_vecinos, df, col_match
           )
       except Exception:
         pass
