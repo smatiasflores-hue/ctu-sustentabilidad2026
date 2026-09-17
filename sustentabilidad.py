@@ -104,53 +104,6 @@ st.markdown(
 )
 
 
-# Función inteligente de geolocalización de calle (con respaldo en vértices externos)
-@st.cache_data(ttl=3600)
-def obtener_calle_cercana(lat, lon, geom_parcela=None):
-  try:
-    headers = {
-        "User-Agent": (
-            "CertificadoTecnicoUrbanistico-LaPlata/2.0"
-            " (contacto@estudio.com)"
-        )
-    }
-    # 1. Intentar en el centroide exacto
-    url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=18"
-    response = requests.get(url, headers=headers, timeout=2)
-    if response.status_code == 200:
-      data = response.json()
-      address = data.get("address", {})
-      calle = (
-          address.get("road")
-          or address.get("pedestrian")
-          or address.get("suburb")
-      )
-      if calle:
-        return calle
-
-    # 2. Si falla o es lote interno, probamos consultando los vértices del polígono
-    if geom_parcela is not None:
-      coords = list(geom_parcela.exterior.coords)
-      if len(coords) > 0:
-        lat_v = coords[0][1]
-        lon_v = coords[0][0]
-        url_v = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat_v}&lon={lon_v}&zoom=18"
-        resp_v = requests.get(url_v, headers=headers, timeout=2)
-        if resp_v.status_code == 200:
-          data_v = resp_v.json()
-          addr_v = data_v.get("address", {})
-          calle_v = (
-              addr_v.get("road")
-              or addr_v.get("pedestrian")
-              or addr_v.get("suburb")
-          )
-          if calle_v:
-            return calle_v
-  except Exception:
-    pass
-  return ""
-
-
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
 def extraer_parcela_de_cca(cca_str):
   try:
@@ -216,8 +169,8 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Lógica geométrica avanzada de frente: Filtra pasillos y detecta el lado de fachada real
-def analizar_frente_parcela(geom_parcela, linderos_vecinos):
+# Lógica geométrica avanzada de frente con control de pasillos/corazones de manzana
+def analizar_frente_parcela(geom_parcela):
   vertices = obtener_vertices_parcela(geom_parcela)
   if not vertices:
     return "Frente Principal", "Norte"
@@ -721,7 +674,6 @@ try:
         col_match = None
         medidas_auto = []
         info_frente = ""
-        calle_autocompletada = ""
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -741,16 +693,11 @@ try:
                 geom_principal = gdf_parcela.geometry.iloc[0]
                 medidas_auto = calcular_medidas_automaticas(geom_principal)
                 info_frente, orientacion_lm = analizar_frente_parcela(
-                    geom_principal, linderos_vecinos
+                    geom_principal
                 )
 
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
-
-                # Búsqueda automática e inteligente de calle cercana con respaldo en vértices
-                calle_autocompletada = obtener_calle_cercana(
-                    lat, lon, geom_principal
-                )
 
                 try:
                   linderos_cercanos = gdf[
@@ -890,21 +837,16 @@ try:
 
           st.markdown("")
 
-          # Campo de calle autocompletado inteligentemente y totalmente editable
+          # Campo editable para la calle (100% control profesional)
           st.subheader("📍 Calle de Referencia (Frente)")
-          valor_calle_inicial = (
-              calle_autocompletada
-              if calle_autocompletada
-              else (
-                  f"Frente hacia {orientacion_lm.split(' ')[0]}"
-                  if orientacion_lm != "No determinada"
-                  else "Calle 26"
-              )
+          sugerencia_calle = (
+              f"Frente hacia {orientacion_lm.split(' ')[0]}"
+              if orientacion_lm != "No determinada"
+              else "Calle 26"
           )
           calle_input = st.text_input(
-              "Indique la calle del frente del inmueble (autocompletada o"
-              " editable):",
-              value=valor_calle_inicial,
+              "Indique la calle del frente del inmueble:",
+              value=sugerencia_calle,
               key="calle_editable_input",
           )
 
