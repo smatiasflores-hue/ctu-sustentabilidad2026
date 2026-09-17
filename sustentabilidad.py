@@ -402,15 +402,12 @@ try:
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
-                # Búsqueda espacial de lotes linderos en radio de 25 metros
+                # FILTRADO ESTRICTO DE LINDEROS REALES (TOCAN O INTERSECTAN EL LÍMITE)
                 try:
-                  gdf_metro = gdf_parcela.to_crs(epsg=32721)
-                  buffer_metro = gdf_metro.buffer(25)
-                  buffer_wgs84 = gpd.GeoSeries(
-                      buffer_metro, crs="EPSG:32721"
-                  ).to_crs("EPSG:4326")
+                  geom_principal = gdf_parcela.geometry.iloc[0]
+                  # Filtramos geometrías que toquen físicamente el polígono principal
                   linderos_cercanos = gdf[
-                      gdf.to_crs("EPSG:4326").intersects(buffer_wgs84.iloc[0])
+                      gdf.geometry.intersects(geom_principal)
                   ]
                   linderos_vecinos = linderos_cercanos[
                       linderos_cercanos[col_match].astype(str) != cca_val
@@ -468,7 +465,7 @@ try:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
           # ====================================================
-          # SECCIÓN: Listado de Lotes Linderos con Número y Letra de Parcela
+          # SECCIÓN: Listado exclusivo de Lotes Linderos Reales
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("Lotes Linderos")
@@ -478,8 +475,7 @@ try:
                 if col_match in linderos_vecinos.columns
                 else linderos_vecinos.columns[0]
             )
-            
-            # Recorremos cada lote lindero vecino y le aplicamos la misma extracción de parcela
+
             linderos_procesados = []
             for _, row_lindero in linderos_vecinos.iterrows():
               cca_lindero = str(row_lindero.get(col_id, ""))
@@ -487,11 +483,10 @@ try:
               if num_letra_parcela and num_letra_parcela != "-":
                 linderos_procesados.append(num_letra_parcela)
 
-            # Eliminamos duplicados si los hubiera
             linderos_procesados = sorted(list(set(linderos_procesados)))
 
             if linderos_procesados:
-              for idx, parc in enumerate(linderos_procesados[:10], 1):
+              for idx, parc in enumerate(linderos_procesados, 1):
                 st.markdown(
                     f"<p style='margin: 0px 0px 4px 0px; font-size:12px;'"
                     f" color:#555;'>• Parcela {parc}</p>",
