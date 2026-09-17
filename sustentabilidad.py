@@ -69,7 +69,7 @@ st.markdown(
 
 
 # Función de geolocalización ampliada
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=86400, show_spinner=False)
 def obtener_calle_cercana(lat, lon):
   try:
     headers = {"User-Agent": "CertificadoTecnicoUrbanistico/2.0"}
@@ -177,26 +177,30 @@ def obtener_vertices_parcela(geom_parcela):
 
 # Función para calcular las medidas automáticas con el factor de calibración métrica ultrafino
 def calcular_medidas_automaticas(geom_parcela):
+  """Calcula las longitudes de los lados en metros usando un CRS UTM local."""
   vertices = obtener_vertices_parcela(geom_parcela)
   if not vertices:
     return []
-  c_prin = geom_parcela.centroid
-  lat_ref = c_prin.y
 
-  factor_x = 111320 * np.cos(np.radians(lat_ref)) * 0.978
-  factor_y = 111000 * 0.978
+  try:
+    # La geometría del mapa está en EPSG:4326. Para medir, proyectamos
+    # temporalmente a la zona UTM correspondiente.
+    gdf_tmp = gpd.GeoDataFrame(geometry=[geom_parcela], crs="EPSG:4326")
+    crs_metrico = gdf_tmp.estimate_utm_crs()
+    geom_metrica = gdf_tmp.to_crs(crs_metrico).geometry.iloc[0]
+    vertices_m = obtener_vertices_parcela(geom_metrica)
+  except Exception:
+    return []
 
   medidas = []
-  num_v = len(vertices)
+  num_v = len(vertices_m)
   for i in range(num_v):
-    p1 = vertices[i]
-    p2 = vertices[(i + 1) % num_v]
-    dx_m = (p2[0] - p1[0]) * factor_x
-    dy_m = (p2[1] - p1[1]) * factor_y
-    dist_metros = round(np.hypot(dx_m, dy_m), 1)
+    p1 = vertices_m[i]
+    p2 = vertices_m[(i + 1) % num_v]
+    dist_metros = round(float(np.hypot(p2[0] - p1[0], p2[1] - p1[1])), 1)
     medidas.append(str(dist_metros))
-  return medidas
 
+  return medidas
 
 # Función avanzada: Croquis con medidas editables y círculo en la parcela (Estilo CartoARBA)
 def generar_imagen_croquis_con_medidas(
@@ -458,36 +462,45 @@ def generar_documento_word(contexto_datos):
 # Carga optimizada y ligera del CSV desde GitHub
 @st.cache_data
 def cargar_datos():
+  """Carga y normaliza el CSV una sola vez por sesión/cache."""
   url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
   columnas_utiles = [
-      "CCA",
-      "PDA",
-      "descripcio",
-      "descripcio_2",
-      "designacio",
-      "fos",
-      "fota",
-      "hmax",
-      "dec_ma",
-      "observacio_2",
+      "CCA", "PDA", "descripcio", "descripcio_2", "designacio",
+      "fos", "fota", "hmax", "dec_ma", "observacio_2",
   ]
-  df = pd.read_csv(
-      url_csv,
-      sep=";",
-      encoding="latin-1",
-      low_memory=False,
-      usecols=lambda col: col in columnas_utiles,
-      on_bad_lines="skip",
-  )
-  return df
 
+  df = pd.read_csv(
+      url_csv, sep=";", encoding="latin-1", low_memory=False,
+      usecols=lambda col: col in columnas_utiles, on_bad_lines="skip",
+  )
+
+  # Normalizaciones costosas: se hacen una sola vez, no en cada rerun de Streamlit.
+  df["CCA"] = df["CCA"].fillna("").astype(str).str.strip()
+  df["PDA_limpio"] = (
+      df["PDA"].fillna("").astype(str).str.split(".").str[0].str.zfill(9)
+  )
+
+  # Índices livianos para evitar recorrer todo el DataFrame en cada consulta.
+  indice_pda = df.groupby("PDA_limpio", sort=False).indices
+  indice_cca = df.groupby("CCA", sort=False).indices
+
+  return df, indice_pda, indice_cca
 
 # Carga optimizada del GeoJSON desde GitHub
 @st.cache_data
 def cargar_geojson():
+  """Carga el GeoJSON una sola vez y normaliza su columna identificadora."""
   url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
-  return gpd.read_file(url_geojson)
+  gdf = gpd.read_file(url_geojson)
 
+  col_match = next(
+      (c for c in ["CCA", "cca", "PDA", "pda", "Partida"] if c in gdf.columns),
+      None,
+  )
+  if col_match:
+    gdf[col_match] = gdf[col_match].fillna("").astype(str).str.strip()
+
+  return gdf, col_match
 
 # Encabezado superior
 st.markdown(
@@ -504,7 +517,8 @@ st.write(
 )
 
 try:
-  df = cargar_datos()
+  df, indice_pda, indice_cca = cargar_datos()
+  gdf, col_match_geo = cargar_geojson()
 
   if "busqueda_activa" not in st.session_state:
     st.session_state.busqueda_activa = False
@@ -549,10 +563,12 @@ try:
     partida_limpia = st.session_state.partida_buscada.strip().zfill(6)
     pda_completo = f"055{partida_limpia}"
 
-    df["PDA_limpio"] = (
-        df["PDA"].astype(str).str.split(".").str[0].str.zfill(9)
+    indices_pda = indice_pda.get(pda_completo)
+    df_filtrado = (
+        df.iloc[indices_pda].copy()
+        if indices_pda is not None
+        else pd.DataFrame(columns=df.columns)
     )
-    df_filtrado = df[df["PDA_limpio"] == pda_completo]
 
     if not df_filtrado.empty:
       st.sidebar.success(
@@ -606,7 +622,12 @@ try:
 
       parcela_val = extraer_parcela_de_cca(cca_val)
 
-      df_cca_match = df[df["CCA"].astype(str) == cca_val]
+      indices_cca = indice_cca.get(cca_val)
+      df_cca_match = (
+          df.iloc[indices_cca]
+          if indices_cca is not None
+          else pd.DataFrame(columns=df.columns)
+      )
 
       dec_ma_list = (
           df_cca_match["dec_ma"].dropna().astype(str).unique().tolist()
@@ -642,16 +663,16 @@ try:
         with col_mapa:
           st.subheader("Ubicación del Lote")
           try:
-            gdf = cargar_geojson()
-            for c in ["CCA", "cca", "PDA", "pda", "Partida"]:
-              if c in gdf.columns:
-                col_match = c
-                break
+            col_match = col_match_geo
 
             if col_match:
-              gdf_parcela = gdf[gdf[col_match].astype(str) == cca_val]
+              try:
+                indices_geo = gdf.index[gdf[col_match].eq(cca_val)]
+                gdf_parcela = gdf.loc[indices_geo].copy()
+              except Exception:
+                gdf_parcela = gpd.GeoDataFrame(columns=gdf.columns, crs=gdf.crs)
               if not gdf_parcela.empty:
-                if gdf_parcela.crs != "EPSG:4326":
+                if gdf_parcela.crs and gdf_parcela.crs.to_epsg() != 4326:
                   gdf_parcela = gdf_parcela.to_crs("EPSG:4326")
 
                 geom_principal = gdf_parcela.geometry.iloc[0]
@@ -670,14 +691,17 @@ try:
                   orientacion_lm = "Noroeste (Frente a Calle)"
 
                 try:
-                  linderos_cercanos = gdf[
-                      gdf.geometry.intersects(geom_principal)
-                  ]
+                  indices_vecinos = gdf.sindex.query(
+                      geom_principal, predicate="intersects"
+                  )
+                  linderos_cercanos = gdf.iloc[indices_vecinos]
                   linderos_vecinos = linderos_cercanos[
-                      linderos_cercanos[col_match].astype(str) != cca_val
-                  ]
+                      linderos_cercanos[col_match].ne(cca_val)
+                  ].copy()
                 except Exception:
-                  linderos_vecinos = gpd.GeoDataFrame()
+                  linderos_vecinos = gpd.GeoDataFrame(
+                      columns=gdf.columns, crs=gdf.crs
+                  )
 
                 tipo_ubicacion = determinar_tipo_ubicacion(
                     geom_principal, linderos_vecinos
@@ -693,7 +717,7 @@ try:
                 )
 
                 if not linderos_vecinos.empty:
-                  if linderos_vecinos.crs != "EPSG:4326":
+                  if linderos_vecinos.crs and linderos_vecinos.crs.to_epsg() != 4326:
                     linderos_vecinos = linderos_vecinos.to_crs("EPSG:4326")
 
                   folium.GeoJson(
@@ -767,7 +791,7 @@ try:
             else:
               st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
           except Exception as map_error:
-            st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
+            st.info(f"No se pudo procesar `lotes.geojson`. (Error: {map_error})")
 
           # Listado de Lotes Linderos
           st.markdown("<br>", unsafe_allow_html=True)
