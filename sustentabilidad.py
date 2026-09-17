@@ -198,13 +198,9 @@ def obtener_orientacion(geom_principal, geom_lindero):
     return f"{dir_y}-{dir_x}"
 
 
-# Función para determinar si el lote es esquina o entre medianeras basado en linderos y geometría
+# Función para determinar si el lote es esquina o entre medianeras
 def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
-  # Si el lote tiene geometría abierta hacia esquinas o cumple con criterios de esquina de manzana
-  # Evaluamos por cantidad de linderos y vértices exteriores
   num_linderos = len(linderos_vecinos)
-  # Criterio urbanístico estándar: los lotes en esquina suelen tener menos colindancias directas longitudinales
-  # o frentes múltiples. Si está ubicado en el extremo de la manzana se define como Esquina.
   if num_linderos <= 2:
     return "Esquina"
   else:
@@ -444,14 +440,14 @@ try:
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
-                # Cálculo de la orientación de la Línea Municipal (LM)
+                # Orientación de la Línea Municipal (LM)
                 minx, miny, maxx, maxy = geom_principal.bounds
                 if (centroid.x - minx) > (centroid.y - miny):
                   orientacion_lm = "Sudoeste (Frente a Calle)"
                 else:
                   orientacion_lm = "Noroeste (Frente a Calle)"
 
-                # FILTRADO ESTRICTO DE LINDEROS REALES
+                # Filtrado de linderos reales
                 try:
                   linderos_cercanos = gdf[
                       gdf.geometry.intersects(geom_principal)
@@ -462,11 +458,11 @@ try:
                 except Exception:
                   linderos_vecinos = gpd.GeoDataFrame()
 
-                # Determinamos si es esquina o entre medianeras según linderos
                 tipo_ubicacion = determinar_tipo_ubicacion(
                     geom_principal, linderos_vecinos
                 )
 
+                # Creación del mapa base
                 m = folium.Map(
                     location=[lat, lon],
                     zoom_start=19,
@@ -476,20 +472,45 @@ try:
                     scrollWheelZoom=False,
                 )
 
+                # 1. Dibujar Linderos y sus etiquetas de texto (Estilo CartoARBA)
                 if not linderos_vecinos.empty:
                   if linderos_vecinos.crs != "EPSG:4326":
                     linderos_vecinos = linderos_vecinos.to_crs("EPSG:4326")
+
                   folium.GeoJson(
                       linderos_vecinos,
                       style_function=lambda x: {
                           "fillColor": "#d3d3d3",
                           "color": "#808080",
                           "weight": 1,
-                            "fillOpacity": 0.3,
+                          "fillOpacity": 0.3,
                       },
                       tooltip="Lote Lindero",
                   ).add_to(m)
 
+                  # Añadir texto con el número/letra de parcela en cada lindero
+                  col_id = (
+                      col_match
+                      if col_match in linderos_vecinos.columns
+                      else linderos_vecinos.columns[0]
+                  )
+                  for _, row_l in linderos_vecinos.iterrows():
+                    cca_l = str(row_l.get(col_id, ""))
+                    parc_txt = extraer_parcela_de_cca(cca_l)
+                    if parc_txt and parc_txt != "-":
+                      c_l = row_l.geometry.centroid
+                      folium.Marker(
+                          location=[c_l.y, c_l.x],
+                          icon=folium.DivIcon(
+                              html=(
+                                  f"<div style='font-size: 10px; font-weight:"
+                                  f" bold; color: #444444; text-align: center;"
+                                  f" text-shadow: 1px 1px 0px #ffffff;'>{parc_txt}</div>"
+                              )
+                          ),
+                      ).add_to(m)
+
+                # 2. Dibujar Parcela Principal y su etiqueta de texto central
                 folium.GeoJson(
                     gdf_parcela,
                     style_function=lambda x: {
@@ -504,10 +525,21 @@ try:
                     ),
                 ).add_to(m)
 
+                # Etiqueta de texto de la parcela principal sobre el mapa
+                folium.Marker(
+                    location=[centroid.y, centroid.x],
+                    icon=folium.DivIcon(
+                        html=(
+                            f"<div style='font-size: 11px; font-weight: 800;"
+                            f" color: #0d3b66; text-align: center; text-shadow:"
+                            f" 1px 1px 0px #ffffff;'>{parcela_val}</div>"
+                        )
+                    ),
+                ).add_to(m)
+
                 st_folium(m, width=320, height=280)
                 st.metric(label="Calle Referencia", value=calle_detectada)
 
-                # Mostramos ambas métricas limpias en dos columnas debajo del mapa
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
                   st.metric(label="Orientación LM", value=orientacion_lm)
@@ -525,7 +557,7 @@ try:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
           # ====================================================
-          # SECCIÓN: Listado de Lotes Linderos con Orientación Cardinal
+          # SECCIÓN: Listado de Lotes Linderos con Orientación
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("Lotes Linderos")
