@@ -1,6 +1,8 @@
 streamlit
 pandas
 geopandas
-shapely
-pyogrio
+requests
 streamlit-folium
+folium
+python-docx
+shapely
