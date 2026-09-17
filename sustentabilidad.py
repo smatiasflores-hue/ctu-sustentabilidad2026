@@ -1,4 +1,6 @@
+from io import BytesIO
 import re
+from docx import Document
 import geopandas as gpd
 import pandas as pd
 import requests
@@ -156,6 +158,47 @@ def obtener_calle_cercana(lat, lon):
   except Exception:
     pass
   return "No disponible"
+
+
+# Función para generar el documento Word basado en una plantilla (.docx)
+def generar_documento_word(contexto_datos):
+  try:
+    doc = Document("plantilla_certificado.docx")
+  except Exception:
+    doc = Document()
+    doc.add_heading("Certificado Técnico Urbanístico", 0)
+
+  reemplazos = {
+      "{{PDA}}": str(contexto_datos.get("pda", "")),
+      "{{PARTIDO}}": str(contexto_datos.get("partido", "")),
+      "{{CIRCUNSCRIPCION}}": str(contexto_datos.get("circunscripcion", "")),
+      "{{SECCION}}": str(contexto_datos.get("seccion", "")),
+      "{{MANZANA}}": str(contexto_datos.get("manzana", "")),
+      "{{PARCELA}}": str(contexto_datos.get("parcela", "")),
+      "{{CALLE}}": str(contexto_datos.get("calle", "")),
+      "{{ZONA}}": str(contexto_datos.get("zona", "")),
+      "{{FOS}}": str(contexto_datos.get("fos", "")),
+      "{{FOT}}": str(contexto_datos.get("fot", "")),
+      "{{ALTURA}}": str(contexto_datos.get("altura", "")),
+      "{{AREA}}": str(contexto_datos.get("area", "")),
+  }
+
+  for p in doc.paragraphs:
+    for clave, valor in reemplazos.items():
+      if clave in p.text:
+        p.text = p.text.replace(clave, valor)
+
+  for tabla in doc.tables:
+    for fila in tabla.rows:
+      for celda in fila.cells:
+        for clave, valor in reemplazos.items():
+          if clave in celda.text:
+            celda.text = celda.text.replace(clave, valor)
+
+  buffer = BytesIO()
+  doc.save(buffer)
+  buffer.seek(0)
+  return buffer
 
 
 # Encabezado superior izquierdo compacto
@@ -325,7 +368,7 @@ try:
       )
 
       # ====================================================
-      # 1. DATOS
+      # 1. DATOS (Con mapa interactivo y linderos vecinos)
       # ====================================================
       st.header("1. DATOS")
 
@@ -334,9 +377,10 @@ try:
 
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
+        calle_detectada = "Calculando..."
+
         with col_mapa:
           st.subheader("Ubicación del Lote")
-          calle_detectada = "Calculando..."
           try:
             gdf = cargar_geojson()
             col_match = None
@@ -356,20 +400,59 @@ try:
 
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
+                # Búsqueda espacial de lotes linderos en radio de 25 metros
+                try:
+                  gdf_metro = gdf_parcela.to_crs(epsg=32721)
+                  buffer_metro = gdf_metro.buffer(25)
+                  buffer_wgs84 = gpd.GeoSeries(
+                      buffer_metro, crs="EPSG:32721"
+                  ).to_crs("EPSG:4326")
+                  linderos_cercanos = gdf[
+                      gdf.to_crs("EPSG:4326").intersects(buffer_wgs84.iloc[0])
+                  ]
+                  linderos_vecinos = linderos_cercanos[
+                      linderos_cercanos[col_match].astype(str) != cca_val
+                  ]
+                except Exception:
+                  linderos_vecinos = gpd.GeoDataFrame()
+
+                # Mapa centrado con controles bloqueados para consistencia de zoom
                 m = folium.Map(
-                    location=[lat, lon], zoom_start=19, tiles="OpenStreetMap"
+                    location=[lat, lon],
+                    zoom_start=19,
+                    tiles="OpenStreetMap",
+                    zoom_control=False,
+                    dragging=False,
+                    scrollWheelZoom=False,
                 )
+
+                # Dibujar linderos vecinos en gris sutil
+                if not linderos_vecinos.empty:
+                  if linderos_vecinos.crs != "EPSG:4326":
+                    linderos_vecinos = linderos_vecinos.to_crs("EPSG:4326")
+                  folium.GeoJson(
+                      linderos_vecinos,
+                      style_function=lambda x: {
+                          "fillColor": "#d3d3d3",
+                          "color": "#808080",
+                          "weight": 1,
+                          "fillOpacity": 0.3,
+                      },
+                      tooltip="Lote Lindero",
+                  ).add_to(m)
+
+                # Dibujar lote principal destacado en azul
                 folium.GeoJson(
                     gdf_parcela,
                     style_function=lambda x: {
                         "fillColor": "#1f77b4",
                         "color": "#0d3b66",
-                        "weight": 2,
-                        "fillOpacity": 0.6,
+                        "weight": 2.5,
+                        "fillOpacity": 0.7,
                     },
                     tooltip=(
-                        f"Calle: {calle_detectada} | Manzana: {manzana_val} |"
-                        f" Parcela: {parcela_val}"
+                        f"Parcela Seleccionada | Calle: {calle_detectada} |"
+                        f" Manzana: {manzana_val} | Parcela: {parcela_val}"
                     ),
                 ).add_to(m)
 
@@ -439,7 +522,7 @@ try:
         st.markdown("</div>", unsafe_allow_html=True)
 
       # ====================================================
-      # 2 A 10. TÍTULOS PRINCIPALES (Flujo natural sin saltos vacíos)
+      # 2 A 10. TÍTULOS PRINCIPALES
       # ====================================================
       st.header("2. ORIENTACIÓN Y VENTILACIÓN / DISEÑO PASIVO")
       with st.container():
@@ -523,22 +606,41 @@ try:
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
-      # ----------------------------------------------------
-      # BOTÓN DE IMPRESIÓN / EXPORTACIÓN PDF
-      # ----------------------------------------------------
+      # ====================================================
+      # BOTÓN DE DESCARGA DE WORD OFICIAL (.DOCX)
+      # ====================================================
       st.markdown("---")
-      col_vacio1, col_boton, col_vacio2 = st.columns([2, 2, 2])
-      with col_boton:
-        if st.button(
-            "🖨️ Imprimir / Guardar Certificado",
+      st.subheader("📥 Generación de Documento Oficial")
+
+      datos_para_docx = {
+          "pda": pda_completo,
+          "partido": partido_val,
+          "circunscripcion": circunscripcion_val,
+          "seccion": seccion_val,
+          "manzana": manzana_val,
+          "parcela": parcela_val,
+          "calle": calle_detectada,
+          "zona": str(row.get("designacio", "N/D")),
+          "fos": str(row.get("fos", "N/D")),
+          "fot": str(row.get("fota", "N/D")),
+          "altura": str(row.get("hmax", "N/D")),
+          "area": str(row.get("descripcio", "N/D")),
+      }
+
+      archivo_docx = generar_documento_word(datos_para_docx)
+
+      col_v1, col_btn_dw, col_v2 = st.columns([1, 2, 1])
+      with col_btn_dw:
+        st.download_button(
+            label="📄 Descargar Certificado en Word (.docx)",
+            data=archivo_docx,
+            file_name=f"Certificado_Urbanistico_{pda_completo}.docx",
+            mime=(
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ),
             use_container_width=True,
             type="primary",
-        ):
-          st.balloons()
-          st.info(
-              "💡 **Para guardar como PDF o imprimir:** Presiona **Ctrl + P**"
-              " (o **Cmd + P** en Mac) en tu teclado."
-          )
+        )
 
     else:
       st.sidebar.error("No se encontró ninguna parcela con ese número.")
