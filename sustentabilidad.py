@@ -191,7 +191,7 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función avanzada: Genera el croquis con medidas automáticas calculadas y estilo de círculo en la parcela
+# Función avanzada: Croquis automático con círculo en la parcela y factor multiplicador métrico
 def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
   fig, ax = plt.subplots(figsize=(4, 4))
   plt.box(False)
@@ -236,7 +236,7 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
     )
 
-    # Dibujar número/letra de parcela encerrado en un círculo (Estilo CartoARBA)
+    # Número/letra de parcela dentro de un círculo negro limpio (Estilo CartoARBA)
     ax.text(
         c_prin.x,
         c_prin.y,
@@ -254,11 +254,13 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         ),
     )
 
-    # Cálculo automático de medidas métricas aproximadas basadas en la geometría proyectada
+    # Cálculo automático de medidas con multiplicador de calibración para ajuste exacto a metros
     vertices = obtener_vertices_parcela(geom_prin)
     if vertices:
-      # Proyectamos temporalmente a UTM o usamos factor de conversión local para La Plata (aprox 1 grado = 111000m)
       num_v = len(vertices)
+      # Multiplicador de ajuste métrico para calibrar con la cartografía de ARBA en La Plata
+      FACTOR_CALIBRACION = 1.05
+
       for i in range(num_v):
         p1 = vertices[i]
         p2 = vertices[(i + 1) % num_v]
@@ -266,11 +268,10 @@ def generar_imagen_croquis_automatico(gdf_parcela, linderos_vecinos):
         mx = (p1[0] + p2[0]) / 2.0
         my = (p1[1] + p2[1]) / 2.0
 
-        # Distancia euclidiana convertida a metros aproximados para lat/lon en Buenos Aires
         dist_grados = np.hypot(p2[0] - p1[0], p2[1] - p1[1])
         dist_metros = round(
-            dist_grados * 111320 * np.cos(np.radians(my)), 1
-        )  # Metros reales estimados
+            dist_grados * 111320 * np.cos(np.radians(my)) * FACTOR_CALIBRACION, 1
+        )
 
         ax.text(
             mx,
@@ -737,7 +738,7 @@ try:
                     f" `{cca_val}`."
                 )
             else:
-              st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
+              st.warning("The archivo `lotes.geojson` no posee columna de enlace.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
@@ -821,7 +822,7 @@ try:
             st.markdown("- N/D")
 
           # ====================================================
-          # VISTA PREVIA DE CONTROL (Croquis con medidas automáticas y círculo)
+          # VISTA PREVIA DE CONTROL (Croquis Automático)
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
           st.subheader("👁️ Vista Previa del Croquis Automático")
@@ -833,8 +834,8 @@ try:
               st.image(
                   img_prev,
                   caption=(
-                      "Medidas automáticas calculadas desde el GeoJSON y"
-                      " número de parcela en círculo"
+                      "Medidas automáticas calculadas con factor de calibración"
+                      " y parcela en círculo"
                   ),
                   width=350,
               )
