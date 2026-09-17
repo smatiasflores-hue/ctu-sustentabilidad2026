@@ -68,12 +68,13 @@ st.markdown(
 )
 
 
-# Función original de geolocalización para obtener la calle cercana mediante OpenStreetMap (Nominatim)
+# Función mejorada de geolocalización con búsqueda ampliada y respaldo por proximidad
 @st.cache_data(ttl=3600)
 def obtener_calle_cercana(lat, lon):
   try:
-    url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}"
-    headers = {"User-Agent": "CertificadoTecnicoUrbanistico/1.0"}
+    headers = {"User-Agent": "CertificadoTecnicoUrbanistico/2.0"}
+    # 1. Búsqueda principal con zoom ampliado de calle
+    url = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat}&lon={lon}&zoom=17&addressdetails=1"
     response = requests.get(url, headers=headers, timeout=3)
     if response.status_code == 200:
       data = response.json()
@@ -81,13 +82,35 @@ def obtener_calle_cercana(lat, lon):
       calle = (
           address.get("road")
           or address.get("pedestrian")
+          or address.get("footway")
           or address.get("suburb")
-          or "Calle no identificada"
       )
-      return calle
+      if calle:
+        return calle
+
+    # 2. Respaldo por desplazamiento leve de coordenadas si el centroide cae desalineado
+    for dlat, dlon in [
+        (0.00015, 0),
+        (-0.00015, 0),
+        (0, 0.00015),
+        (0, -0.00015),
+    ]:
+      url_alt = f"https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat={lat+dlat}&lon={lon+dlon}&zoom=17&addressdetails=1"
+      resp_alt = requests.get(url_alt, headers=headers, timeout=2)
+      if resp_alt.status_code == 200:
+        data_alt = resp_alt.json()
+        addr_alt = data_alt.get("address", {})
+        calle_alt = (
+            addr_alt.get("road")
+            or addr_alt.get("pedestrian")
+            or addr_alt.get("footway")
+        )
+        if calle_alt:
+          return calle_alt
+
   except Exception:
     pass
-  return "No disponible"
+  return ""
 
 
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
@@ -609,7 +632,7 @@ try:
 
         col_mapa, col_datos = st.columns([1, 2], gap="large")
 
-        calle_detectada = "Cargando..."
+        calle_detectada = ""
         linderos_vecinos = gpd.GeoDataFrame()
         gdf_parcela = gpd.GeoDataFrame()
         geom_principal = None
@@ -640,7 +663,7 @@ try:
                 centroid = geom_principal.centroid
                 lat, lon = centroid.y, centroid.x
 
-                # Geolocalización de la calle cercana
+                # Geolocalización ampliada de la calle cercana
                 calle_detectada = obtener_calle_cercana(lat, lon)
 
                 minx, miny, maxx, maxy = geom_principal.bounds
@@ -732,7 +755,12 @@ try:
                 st.metric(
                     label="Orientación Línea Municipal", value=orientacion_lm
                 )
-                st.metric(label="Calle Referencia", value=calle_detectada)
+                st.metric(
+                    label="Calle Referencia",
+                    value=calle_detectada
+                    if calle_detectada
+                    else "No disponible",
+                )
 
               else:
                 st.info(
@@ -740,7 +768,7 @@ try:
                     f" `{cca_val}`."
                 )
             else:
-              st.warning("El archivo `lotes.geojson` no posee columna de enlace.")
+              st.warning("The `lotes.geojson` file lacks a join column.")
           except Exception as map_error:
             st.info(f"Cargue el archivo `lotes.geojson`. (Error: {map_error})")
 
