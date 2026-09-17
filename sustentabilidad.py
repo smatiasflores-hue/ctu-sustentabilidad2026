@@ -1,7 +1,9 @@
 from io import BytesIO
 import re
 from docx import Document
+from docx.shared import Inches
 import geopandas as gpd
+import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 import streamlit as st
@@ -171,10 +173,72 @@ def determinar_tipo_ubicacion(geom_parcela, linderos_vecinos):
     return "Entre Medianeras"
 
 
+# Función para generar una imagen estática del croquis catastral (Lote + Linderos + Números)
+def generar_imagen_croquis(gdf_parcela, linderos_vecinos):
+  fig, ax = plt.subplots(figsize=(4, 4))
+  plt.box(False)
+  ax.set_xticks([])
+  ax.set_yticks([])
+
+  # Dibujar linderos en gris claro con borde gris
+  if not linderos_vecinos.empty:
+    linderos_vecinos.plot(
+        ax=ax, color="#d3d3d3", edgecolor="#808080", linewidth=0.8, alpha=0.6
+    )
+    col_id = (
+        linderos_vecinos.columns[0]
+        if "CCA" not in linderos_vecinos.columns
+        else "CCA"
+    )
+    for _, row_l in linderos_vecinos.iterrows():
+      cca_l = str(row_l.get(col_id, ""))
+      parc_txt = extraer_parcela_de_cca(cca_l)
+      if parc_txt and parc_txt != "-":
+        centroid = row_l.geometry.centroid
+        ax.text(
+            centroid.x,
+            centroid.y,
+            parc_txt,
+            fontsize=8,
+            ha="center",
+            va="center",
+            color="#444444",
+            weight="bold",
+        )
+
+  # Dibujar parcela principal en azul destacado
+  if not gdf_parcela.empty:
+    gdf_parcela.plot(
+        ax=ax, color="#1f77b4", edgecolor="#0d3b66", linewidth=1.5, alpha=0.8
+    )
+    c_prin = gdf_parcela.geometry.iloc[0].centroid
+    parc_prin = extraer_parcela_de_cca(
+        str(gdf_parcela.iloc[0].get(gdf_parcela.columns[0], ""))
+    )
+    ax.text(
+        c_prin.x,
+        c_prin.y,
+        parc_prin,
+        fontsize=9,
+        ha="center",
+        va="center",
+        color="#ffffff",
+        weight="bold",
+    )
+
+  plt.tight_layout()
+  img_buffer = BytesIO()
+  plt.savefig(
+      img_buffer, format="png", dpi=200, bbox_inches="tight", transparent=True
+  )
+  plt.close(fig)
+  img_buffer.seek(0)
+  return img_buffer
+
+
 # Función para generar el documento Word basado en la plantilla exacta
 def generar_documento_word(contexto_datos):
   try:
-    # Carga estricta usando tu nombre de archivo exacto
     doc = Document("informe_sustentabilidad.docx")
   except Exception as e:
     doc = Document()
@@ -193,9 +257,8 @@ def generar_documento_word(contexto_datos):
       ),
       "{{CALL}}": str(contexto_datos.get("calle", "")),
       "{{ARA}}": str(contexto_datos.get("area", "")),
-      "{{SUP}}": str(contexto_datos.get("superficie", "N/D")),
+      "{{SUP}}": str(contexto_datos.get("superficie", "S/D")),
       "{{LOLI}}": str(contexto_datos.get("linderos_texto", "")),
-      "{{MAPO}}": "[Croquis de Ubicación GIS]",
       "{{PROP}}": str(contexto_datos.get("propietario", "No indicado")),
       "{{AGUA}}": str(contexto_datos.get("agua", "")),
       "{{GAS}}": str(contexto_datos.get("gas", "")),
@@ -209,17 +272,27 @@ def generar_documento_word(contexto_datos):
       "{{PROF}}": str(contexto_datos.get("profesional", "No indicado")),
   }
 
+  # Reemplazo de textos en párrafos
   for p in doc.paragraphs:
     for clave, valor in reemplazos.items():
       if clave in p.text:
         p.text = p.text.replace(clave, valor)
 
+  # Reemplazo de textos en tablas y búsqueda de etiqueta {{MAPO}} para insertar la imagen del croquis
+  img_croquis = contexto_datos.get("imagen_croquis", None)
   for tabla in doc.tables:
     for fila in tabla.rows:
       for celda in fila.cells:
-        for clave, valor in reemplazos.items():
-          if clave in celda.text:
-            celda.text = celda.text.replace(clave, valor)
+        # Si la celda contiene exactamente {{MAPO}}, vaciamos el texto e insertamos la imagen del mapa
+        if "{{MAPO}}" in celda.text and img_croquis is not None:
+          celda.text = ""
+          p = celda.paragraphs[0]
+          run = p.add_run()
+          run.add_picture(img_croquis, width=Inches(2.2))
+        else:
+          for clave, valor in reemplazos.items():
+            if clave in celda.text:
+              celda.text = celda.text.replace(clave, valor)
 
   buffer = BytesIO()
   doc.save(buffer)
@@ -398,6 +471,7 @@ try:
 
         calle_detectada = "Calculando..."
         linderos_vecinos = gpd.GeoDataFrame()
+        gdf_parcela = gpd.GeoDataFrame()
         geom_principal = None
         orientacion_lm = "No determinada"
         tipo_ubicacion = "Entre Medianeras"
@@ -638,6 +712,16 @@ try:
           " / ".join(obs2_list) if obs2_list else "Normativa general aplicable"
       )
 
+      # Generación de la imagen del croquis GIS para {{MAPO}}
+      buffer_imagen_mapa = None
+      try:
+        if not gdf_parcela.empty:
+          buffer_imagen_mapa = generar_imagen_croquis(
+              gdf_parcela, linderos_vecinos
+          )
+      except Exception:
+        pass
+
       datos_para_docx = {
           "partido": partido_val,
           "pda": pda_completo,
@@ -662,14 +746,12 @@ try:
           "profesional": (
               profesional_input if profesional_input else "No indicado"
           ),
-          "agua": "[X] SÍ  [ ] NO" if chk_agua else "[ ] SÍ  [X] NO",
-          "gas": "[X] SÍ  [ ] NO" if chk_gas else "[ ] SÍ  [X] NO",
-          "cloaca": "[X] SÍ  [ ] NO" if chk_cloaca else "[ ] SÍ  [X] NO",
-          "electricidad": (
-              "[X] SÍ  [ ] NO" if chk_electricidad else "[ ] SÍ  [X] NO"
-          ),
-          "alumbrado": "[X] SÍ  [ ] NO" if chk_alumbrado else "[ ] SÍ  [X] NO",
-          "pavimento": "[X] SÍ  [ ] NO" if chk_pavimento else "[ ] SÍ  [X] NO",
+          "agua": "SÍ" if chk_agua else "NO",
+          "gas": "SÍ" if chk_gas else "NO",
+          "cloaca": "SÍ" if chk_cloaca else "NO",
+          "electricidad": "SÍ" if chk_electricidad else "NO",
+          "alumbrado": "SÍ" if chk_alumbrado else "NO",
+          "pavimento": "SÍ" if chk_pavimento else "NO",
           "ordenanza": ordenanza_str,
           "zona": str(row.get("designacio", "N/D")),
           "usos_admitidos": (
@@ -677,6 +759,7 @@ try:
               " según zonificación "
               + str(row.get("designacio", ""))
           ),
+          "imagen_croquis": buffer_imagen_mapa,
       }
 
       archivo_docx = generar_documento_word(datos_para_docx)
@@ -698,7 +781,7 @@ try:
       st.sidebar.error("No se encontró ninguna parcela con ese número.")
   else:
     st.info(
-        "👈 Ingrese los 6 dígitos de la Partida en la barra lateral y presione"
+        "👈 Ingrese los 6 dígitos de la Partida en la barra lateral y presional"
         ' "Consultar Parcela" para ver los datos de la parcela.'
     )
 
