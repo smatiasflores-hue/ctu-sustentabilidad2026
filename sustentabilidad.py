@@ -11,6 +11,14 @@ import streamlit as st
 from streamlit_folium import st_folium
 import folium
 
+# Opcional para lectura de DXF (CAD)
+try:
+  import ezdxf
+  from ezdxf.recover import readfile
+  from shapely.geometry import Polygon as ShapelyPolygon
+except ImportError:
+  ezdxf = None
+
 # Configuración de la página en modo ancho
 st.set_page_config(
     page_title="Certificado Técnico Urbanístico",
@@ -108,6 +116,122 @@ def obtener_calles_cercanas_lote(_geom_parcela):
   )
 
 
+# Función para determinar la orientación cardinal (rumbo) de un segmento
+def obtener_rumbo_segmento(x1, y1, x2, y2):
+  dx = x2 - x1
+  dy = y2 - y1
+  angulo = np.degrees(np.arctan2(dy, dx)) % 360
+  if 22.5 <= angulo < 67.5:
+    return "Noreste"
+  elif 67.5 <= angulo < 112.5:
+    return "Este"
+  elif 112.5 <= angulo < 157.5:
+    return "Sudeste"
+  elif 157.5 <= angulo < 202.5:
+    return "Sur"
+  elif 202.5 <= angulo < 247.5:
+    return "Sudoeste"
+  elif 247.5 <= angulo < 292.5:
+    return "Oeste"
+  elif 292.5 <= angulo < 337.5:
+    return "Noroeste"
+  else:
+    return "Norte"
+
+
+# Función optimizada para polilíneas cerradas en DXF
+def procesar_y_renderizar_cad(archivo_a_procesar):
+  if ezdxf is None:
+    return None, "Librería 'ezdxf' no instalada.", {}, []
+
+  try:
+    with open("temp_plano.dxf", "wb") as f:
+      f.write(archivo_a_procesar.getbuffer())
+
+    doc, auditor = readfile("temp_plano.dxf")
+    msp = doc.modelspace()
+
+    superficies = {"cubierta": 0.0, "semicubierta": 0.0}
+    segmentos_cubierta = []
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    plt.box(False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    elementos_encontrados = False
+
+    for entidad in msp:
+      capa = str(entidad.dxf.layer).strip().lower()
+      dxftype = entidad.dxftype()
+
+      if dxftype in ["LWPOLYLINE", "POLYLINE"]:
+        try:
+          if dxftype == "LWPOLYLINE":
+            puntos = [(float(v[0]), float(v[1])) for v in entidad.get_points("xy")]
+          else:
+            puntos = [(float(v.dxf.location.x), float(v.dxf.location.y)) for v in entidad.vertices]
+
+          if len(puntos) >= 3:
+            if puntos[0] != puntos[-1]:
+              puntos.append(puntos[0])
+
+            poly = ShapelyPolygon(puntos)
+            if not poly.is_valid:
+              poly = poly.buffer(0)
+
+            area = float(poly.area)
+            if area > 0:
+              elementos_encontrados = True
+
+              # Capa 0 = Superficie Cubierta
+              if capa in ["0", "layer_0", "capa 0", "cubierta"]:
+                superficies["cubierta"] += area
+                
+                for i in range(len(puntos) - 1):
+                  p1 = puntos[i]
+                  p2 = puntos[i + 1]
+                  dist_segmento = round(np.hypot(p2[0] - p1[0], p2[1] - p1[1]), 2)
+                  if dist_segmento > 0.1:
+                    rumbo = obtener_rumbo_segmento(p1[0], p1[1], p2[0], p2[1])
+                    segmentos_cubierta.append({
+                        "longitud": dist_segmento,
+                        "orientacion": rumbo
+                    })
+
+                x, y = zip(*puntos)
+                ax.plot(x, y, color="#1f77b4", linewidth=1.5)
+                ax.fill(x, y, color="#1f77b4", alpha=0.3)
+
+              # Capa 1 = Superficie Semicubierta
+              elif capa in ["1", "layer_1", "capa 1", "semicubierta"]:
+                superficies["semicubierta"] += area
+                x, y = zip(*puntos)
+                ax.plot(x, y, color="#ff7f0e", linewidth=1.5, linestyle="--")
+                ax.fill(x, y, color="#ff7f0e", alpha=0.3)
+        except Exception:
+          pass
+
+    superficies["total"] = round(superficies["cubierta"] + superficies["semicubierta"], 2)
+
+    ax.set_aspect("equal", adjustable="datalim")
+    plt.tight_layout()
+
+    img_buffer = BytesIO()
+    plt.savefig(img_buffer, format="png", dpi=300, bbox_inches="tight", transparent=True)
+    plt.close(fig)
+    img_buffer.seek(0)
+
+    return (
+        img_buffer,
+        None if elementos_encontrados else "No se encontraron polilíneas cerradas válidas en capas 0 o 1.",
+        superficies,
+        segmentos_cubierta
+    )
+  except Exception as e:
+    return None, f"Error al procesar CAD: {e}", {}, []
+
+
 # Función auxiliar para extraer el número y letra de parcela desde un valor CCA
 def extraer_parcela_de_cca(cca_str):
   try:
@@ -130,25 +254,7 @@ def obtener_orientacion(geom_principal, geom_lindero):
   c_lind = geom_lindero.centroid
   dx = c_lind.x - c_prin.x
   dy = c_lind.y - c_prin.y
-
-  angulo = np.degrees(np.arctan2(dy, dx)) % 360
-
-  if 22.5 <= angulo < 67.5:
-    return "Norte-Este"
-  elif 67.5 <= angulo < 112.5:
-    return "Este"
-  elif 112.5 <= angulo < 157.5:
-    return "Sur-Este"
-  elif 157.5 <= angulo < 202.5:
-    return "Sur"
-  elif 202.5 <= angulo < 247.5:
-    return "Sur-Oeste"
-  elif 247.5 <= angulo < 292.5:
-    return "Oeste"
-  elif 292.5 <= angulo < 337.5:
-    return "Norte-Oeste"
-  else:
-    return "Norte"
+  return obtener_rumbo_segmento(c_prin.x, c_prin.y, c_lind.x, c_lind.y)
 
 
 # Función para determinar si el lote es esquina o entre medianeras
@@ -177,7 +283,7 @@ def obtener_vertices_parcela(geom_parcela):
     return []
 
 
-# Función de precisión milimétrica para calcular rumbos de 8 puntos (incluye Sudoeste, Sudeste, etc.)
+# Función de precisión milimétrica para calcular rumbos de 8 puntos exactos
 def determinar_linea_municipal_por_frente(geom_parcela, calle_seleccionada):
   vertices = obtener_vertices_parcela(geom_parcela)
   if not vertices:
@@ -196,36 +302,15 @@ def determinar_linea_municipal_por_frente(geom_parcela, calle_seleccionada):
     dx = mx - c_prin.x
     dy = my - c_prin.y
     distancia_al_centro = np.hypot(dx, dy)
-
-    # Cálculo exacto del ángulo en grados (0 a 360)
     angulo = np.degrees(np.arctan2(dy, dx)) % 360
 
     mejores_lados.append((i + 1, angulo, distancia_al_centro))
 
-  # Seleccionamos la arista más externa (la más alejada del centroide del lote)
   mejores_lados.sort(key=lambda x: x[2], reverse=True)
 
   if mejores_lados:
     _, angulo_frente, _ = mejores_lados[0]
-
-    # Mapeo preciso de 8 rumbos cartográficos
-    if 22.5 <= angulo_frente < 67.5:
-      rumbo = "Noreste"
-    elif 67.5 <= angulo_frente < 112.5:
-      rumbo = "Este"
-    elif 112.5 <= angulo_frente < 157.5:
-      rumbo = "Sudeste"
-    elif 157.5 <= angulo_frente < 202.5:
-      rumbo = "Sur"
-    elif 202.5 <= angulo_frente < 247.5:
-      rumbo = "Sudoeste"
-    elif 247.5 <= angulo_frente < 292.5:
-      rumbo = "Oeste"
-    elif 292.5 <= angulo_frente < 337.5:
-      rumbo = "Noroeste"
-    else:
-      rumbo = "Norte"
-
+    rumbo = obtener_rumbo_segmento(0, 0, np.cos(np.radians(angulo_frente)), np.sin(np.radians(angulo_frente)))
     return f"{rumbo} (Frente a {calle_seleccionada})"
 
   return f"Frente a {calle_seleccionada}"
@@ -569,8 +654,7 @@ st.markdown(
 )
 st.title("📄 Certificado Técnico Urbanístico - La Plata")
 st.write(
-    "Sistema de consulta y gestión de parcelas optimizado para evitar límites"
-    " de memoria."
+    "Sistema de consulta de parcelas e incorporación de planos CAD (DXF/DWG)."
 )
 
 try:
@@ -587,24 +671,24 @@ try:
 
   col1, col2 = st.sidebar.columns([1, 2])
   with col1:
-    st.text_input("Partido", value="055", disabled=True)
+    st.text_input("Partido", value="055", disabled=True, key="partido_disabled_sidebar")
   with col2:
     partida_input = st.text_input(
-        "Nº Partida", max_chars=6, placeholder="Ej: 47562"
+        "Nº Partida", max_chars=6, placeholder="Ej: 47562", key="input_num_partida_lateral"
     )
 
-  consultar = st.sidebar.button("Consultar Parcela")
+  consultar = st.sidebar.button("Consultar Parcela", key="btn_consultar_sidebar")
 
   st.sidebar.markdown("---")
   st.sidebar.header("📋 Datos del Expediente")
   propietario_input = st.sidebar.text_input(
-      "Propietario(s)", placeholder="Apellidos y Nombres"
+      "Propietario(s)", placeholder="Apellidos y Nombres", key="input_propietario_lateral"
   )
   profesional_input = st.sidebar.text_input(
-      "Profesional a cargo", placeholder="Arquitecto / Maestro Mayor de Obras"
+      "Profesional a cargo", placeholder="Arquitecto / Maestro Mayor de Obras", key="input_profesional_lateral"
   )
   inscripcion_input = st.sidebar.text_input(
-      "Inscripción al Dominio", placeholder="Matrícula / Folio / Año"
+      "Inscripción al Dominio", placeholder="Matrícula / Folio / Año", key="input_inscripcion_lateral"
   )
 
   if consultar:
@@ -644,7 +728,7 @@ try:
             for idx, row in df_filtrado.iterrows()
         }
         seleccion_str = st.selectbox(
-            "Seleccionar registro a consultar:", list(opciones.keys())
+            "Seleccionar registro a consultar:", list(opciones.keys()), key="select_fila_coincidente"
         )
         indice_seleccionado = opciones[seleccion_str]
         row = df_filtrado.loc[indice_seleccionado]
@@ -716,10 +800,6 @@ try:
         linderos_texto_acumulado = ""
         col_match = None
         medidas_auto = []
-
-        with col_datos:
-          st.subheader("a. Datos Catastrales")
-          st.subheader("📍 Calle de Referencia (Frente del Inmueble)")
 
         with col_mapa:
           st.subheader("Ubicación del Lote")
@@ -955,49 +1035,153 @@ try:
             st.markdown("- N/D")
 
           # ====================================================
-          # CASILLAS EDITABLES AUTOCOMPLETADAS CON MEDIDAS AFINADAS
+          # MEDIDAS Y CROQUIS (Croquis Izquierda, Medidas Derecha)
           # ====================================================
-          st.subheader("📏 Ajuste y Verificación de Medidas por Lado")
+          st.subheader("📏 Ajuste de Medidas y Vista Previa del Croquis")
           st.markdown(
-              "<p style='font-size:12px; color:#555;'>El sistema"
-              " autocompletó las medidas calculadas con calibración métrica."
-              " Puede modificarlas si observa alguna variación:</p>",
+              "<p style='font-size:12px; color:#555;'>Modifique las medidas"
+              " de cada lado según corresponda:</p>",
               unsafe_allow_html=True,
           )
 
-          medidas_editadas = []
-          num_lados = len(medidas_auto) if medidas_auto else 4
-          cols_medidas = st.columns(min(num_lados, 4))
+          col_croquis_preview, col_inputs_medidas = st.columns(
+              [1, 1], gap="medium"
+          )
 
-          for i in range(num_lados):
-            val_defecto = medidas_auto[i] if i < len(medidas_auto) else "10.0"
-            col_idx = i % 4
-            with cols_medidas[col_idx]:
+          num_lados = len(medidas_auto) if medidas_auto else 4
+          medidas_editadas = []
+
+          with col_inputs_medidas:
+            for i in range(num_lados):
+              val_defecto = medidas_auto[i] if i < len(medidas_auto) else "10.0"
               val_edit = st.text_input(
                   f"Lado {i+1}", value=val_defecto, key=f"lado_edit_{i}"
               )
               medidas_editadas.append(val_edit)
 
+          with col_croquis_preview:
+            try:
+              if not gdf_parcela.empty:
+                img_prev = generar_imagen_croquis_con_medidas(
+                    gdf_parcela, linderos_vecinos, medidas_editadas
+                )
+                st.image(
+                    img_prev,
+                    caption="Croquis con medidas actualizadas",
+                    width=320,
+                )
+            except Exception as prev_err:
+              st.info(f"No se pudo generar la vista previa: {prev_err}")
+
           # ====================================================
-          # VISTA PREVIA DE CONTROL (Croquis con medidas editadas)
+          # VISUALIZACIÓN DEL PLANO CAD CON SUMATORIA Y SEGMENTOS TÉRMICOS
           # ====================================================
           st.markdown("<br>", unsafe_allow_html=True)
-          st.subheader("👁️ Vista Previa del Croquis")
-          try:
-            if not gdf_parcela.empty:
-              img_prev = generar_imagen_croquis_con_medidas(
-                  gdf_parcela, linderos_vecinos, medidas_editadas
+          st.subheader(
+              "📐 Plano CAD e Incorporación de Superficies (Capas 0 y 1)"
+          )
+          st.markdown(
+              "<p style='font-size:12px; color:#555;'>Arrastre o reemplace su"
+              " plano CAD (.dxf / .dwg) aquí para actualizar las áreas y"
+              " longitudes automáticamente:</p>",
+              unsafe_allow_html=True,
+          )
+
+          if "val_cubierta" not in st.session_state:
+            st.session_state.val_cubierta = "0.0"
+          if "val_semicubierta" not in st.session_state:
+            st.session_state.val_semicubierta = "0.0"
+
+          archivo_cad_subido = st.file_uploader(
+              "Subir archivo CAD para extraer superficies",
+              type=["dxf", "dwg"],
+              key="uploader_cad_principal",
+          )
+
+          img_cad_buffer = None
+          superficies_cad = {}
+          segmentos_cubierta_cad = []
+          
+          if archivo_cad_subido is not None:
+            if archivo_cad_subido.name.endswith(".dwg"):
+              st.warning(
+                  "⚠️ Has subido un archivo .DWG. Recuerda exportarlo como .DXF"
+                  " desde AutoCAD para una lectura exacta de las capas."
               )
+            img_cad_buffer, cad_error, superficies_cad, segmentos_cubierta_cad = (
+                procesar_y_renderizar_cad(archivo_cad_subido)
+            )
+            if cad_error:
+              st.error(cad_error)
+            else:
+              valor_cubierta_cad = str(
+                  round(superficies_cad.get("cubierta", 0.0), 2)
+              )
+              valor_semicubierta_cad = str(
+                  round(superficies_cad.get("semicubierta", 0.0), 2)
+              )
+              valor_total_cad = str(
+                  round(superficies_cad.get("total", 0.0), 2)
+              )
+
+              st.session_state.val_cubierta = valor_cubierta_cad
+              st.session_state.val_semicubierta = valor_semicubierta_cad
+
+              st.session_state.sup_cub_input_key = valor_cubierta_cad
+              st.session_state.sup_semi_input_key = valor_semicubierta_cad
+
+              st.success(
+                  f"¡Plano CAD procesado! Cubierta: {valor_cubierta_cad} m² | "
+                  f"Semicubierta: {valor_semicubierta_cad} m² | "
+                  f"Total: {valor_total_cad} m²"
+              )
+
+          col_cad_mapa, col_cad_inputs = st.columns([1, 1], gap="medium")
+
+          with col_cad_inputs:
+            sup_cub_input = st.text_input(
+                "Superficie Cubierta (Capa 0) [m²]",
+                value=st.session_state.val_cubierta,
+                key="sup_cub_input_key",
+            )
+            sup_semi_input = st.text_input(
+                "Superficie Semicubierta (Capa 1) [m²]",
+                value=st.session_state.val_semicubierta,
+                key="sup_semi_input_key",
+            )
+
+            total_superficies_cad = round(
+                float(sup_cub_input.replace(",", "."))
+                + float(sup_semi_input.replace(",", ".")),
+                2,
+            )
+            st.metric(
+                "TOTAL SUPERFICIES [m²]",
+                f"{total_superficies_cad:.2f}",
+            )
+
+            if segmentos_cubierta_cad:
+              st.markdown("##### 🌡️ Distancias de Líneas (Superficie Cubierta):")
+              for idx, seg in enumerate(segmentos_cubierta_cad):
+                st.markdown(
+                    f"<p style='font-size:11px; margin:2px 0; color:#333;'>"
+                    f"• Línea {idx+1}: <b>{seg['longitud']} m</b> | Orientación: <b>{seg['orientacion']}</b>"
+                    f"</p>",
+                    unsafe_allow_html=True,
+                )
+
+          with col_cad_mapa:
+            if img_cad_buffer is not None:
               st.image(
-                  img_prev,
-                  caption=(
-                      "Vista previa actualizada con calibración fina y círculo"
-                      " de parcela"
-                  ),
-                  width=350,
+                  img_cad_buffer,
+                  caption="Visualización de Polilíneas (Capa 0 y 1)",
+                  width=320,
               )
-          except Exception as prev_err:
-            st.info(f"No se pudo generar la vista previa: {prev_err}")
+            else:
+              st.info(
+                  "Esperando archivo CAD para renderizar el plano y calcular"
+                  " superficies."
+              )
 
           # Infraestructura
           st.subheader("f. Infraestructura y Servicios")
@@ -1049,7 +1233,7 @@ try:
           ),
           "calle": calle_input if calle_input else "S/D",
           "area": str(row.get("descripcio", "N/D")),
-          "superficie": "S/D (según título)",
+          "superficie": f"Cubierta: {sup_cub_input} m² / Semicubierta: {sup_semi_input} m²",
           "linderos_texto": (
               linderos_texto_acumulado
               if linderos_texto_acumulado
