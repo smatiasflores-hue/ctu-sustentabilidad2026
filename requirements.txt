@@ -2,8 +2,10 @@ streamlit
 pandas
 geopandas
 shapely
-folium
-streamlit-folium
-python-docx
 matplotlib
+ezdxf
+streamlit-folium
+folium
+python-docx
 requests
+numpy
