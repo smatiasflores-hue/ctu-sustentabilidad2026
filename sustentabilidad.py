@@ -837,7 +837,7 @@ try:
                   )
                   linderos_cercanos = gdf.iloc[indices_vecinos]
                   linderos_vecinos = linderos_cercanos[
-                      linderos_vecinos[col_match].ne(cca_val)
+                      linderos_cercanos[col_match].ne(cca_val)
                   ].copy()
                 except Exception:
                   linderos_vecinos = gpd.GeoDataFrame(
