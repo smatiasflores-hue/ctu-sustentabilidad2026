@@ -77,7 +77,7 @@ st.markdown(
 
 
 # Función para capturar múltiples calles cercanas (ideal para esquinas)
-@st.cache_data(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def obtener_calles_cercanas_lote(_geom_parcela):
   calles_encontradas = set()
   try:
@@ -598,7 +598,7 @@ def generar_documento_word(contexto_datos):
 
 
 # Carga optimizada y ligera del CSV desde GitHub
-@st.cache_data
+@st.cache_data(ttl=1800)
 def cargar_datos():
   url_csv = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/datos.csv"
   columnas_utiles = [
@@ -631,7 +631,7 @@ def cargar_datos():
 
 
 # Carga optimizada del GeoJSON desde GitHub
-@st.cache_data
+@st.cache_data(ttl=1800)
 def cargar_geojson():
   url_geojson = "https://github.com/smatiasflores-hue/ctu-sustentabilidad2026/releases/download/v1.0/lotes.geojson"
   gdf = gpd.read_file(url_geojson)
@@ -665,6 +665,13 @@ try:
     st.session_state.busqueda_activa = False
   if "partida_buscada" not in st.session_state:
     st.session_state.partida_buscada = ""
+
+  # Botón superior rápido para limpiar caché y evitar bloqueos por memoria
+  col_title_btn1, col_title_btn2 = st.columns([4, 1])
+  with col_title_btn2:
+    if st.button("🔄 Limpiar Memoria"):
+      st.cache_data.clear()
+      st.rerun()
 
   st.sidebar.header("🔍 Consulta por Partida")
   st.sidebar.markdown("**Estructura:** `055` + `[ 6 dígitos de Partida ]`")
@@ -830,7 +837,7 @@ try:
                   )
                   linderos_cercanos = gdf.iloc[indices_vecinos]
                   linderos_vecinos = linderos_cercanos[
-                      linderos_cercanos[col_match].ne(cca_val)
+                      linderos_vecinos[col_match].ne(cca_val)
                   ].copy()
                 except Exception:
                   linderos_vecinos = gpd.GeoDataFrame(
